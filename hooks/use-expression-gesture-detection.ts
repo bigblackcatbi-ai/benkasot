@@ -82,6 +82,8 @@ function noFaceState(): Omit<VisionAnalysisState, 'handGestures'> {
   }
 }
 
+let tongueCanvas: HTMLCanvasElement | null = null
+
 function detectTonguePixels(video: HTMLVideoElement | null, face: NormalizedLandmark[] | undefined): number {
   if (!video || !face || video.readyState < 2 || face.length < 400 || typeof document === 'undefined') return 0
 
@@ -92,7 +94,7 @@ function detectTonguePixels(video: HTMLVideoElement | null, face: NormalizedLand
   const mouthOpen = distance(upper, lower) / mouthWidth
   if (mouthOpen < 0.16) return 0
 
-  const canvas = detectTonguePixels.canvas ?? (detectTonguePixels.canvas = document.createElement('canvas'))
+  const canvas = tongueCanvas ?? (tongueCanvas = document.createElement('canvas'))
   canvas.width = 48
   canvas.height = 32
   const ctx = canvas.getContext('2d', { willReadFrequently: true })
@@ -128,8 +130,6 @@ function detectTonguePixels(video: HTMLVideoElement | null, face: NormalizedLand
     return 0
   }
 }
-detectTonguePixels.canvas = undefined as HTMLCanvasElement | undefined
-
 function buildSignals(blendshapes: Blendshape[] | undefined, pixelTongue: number): FaceSignals {
   const smileL = bs(blendshapes, 'mouthSmileLeft')
   const smileR = bs(blendshapes, 'mouthSmileRight')
