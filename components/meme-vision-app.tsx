@@ -4,7 +4,7 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useEffect, useRef, useState } from 'react'
 import { Camera, ChevronRight, Cpu, History, ImagePlus, LayoutGrid, Mic, Pause, Play, Plus, RotateCcw, Settings, Sparkles, SlidersHorizontal, Video, Zap } from 'lucide-react'
-import { addCustomMeme, deleteCustomMeme, getAllMemes, getMemeById, memes } from '@/lib/memes'
+import { addCustomMeme, deleteMeme, getAllMemes, getMemeById, memes } from '@/lib/memes'
 import type { Meme, MemeCondition, MemeConditionValue } from '@/types/meme'
 import { useCamera } from '@/hooks/use-camera'
 import { useFaceLandmarker } from '@/hooks/use-face-landmarker'
@@ -50,7 +50,7 @@ function MemeCard({ meme, index = 0, onDelete }: { meme: Meme; index?: number; o
         <span className="active-status">● {meme.enabled ? 'ACTIVE' : 'DISABLED'}</span>
         <div className="card-actions">
           <Link href={`/memes/create?edit=${encodeURIComponent(meme.id)}`} className="small-link">EDIT →</Link>
-          {meme.source === 'custom' && onDelete && <button type="button" className="small-link delete-link" onClick={() => onDelete(meme.id)}>DELETE</button>}
+          {onDelete && <button type="button" className="small-link delete-link" onClick={() => onDelete(meme.id)}>DELETE</button>}
         </div>
       </div>
     </div>
@@ -327,9 +327,9 @@ function LibraryPage() {
 
   const handleDelete = (id: string) => {
     const meme = getAllMemes().find((item) => item.id === id)
-    if (!meme || meme.source !== 'custom') return
+    if (!meme) return
     if (!window.confirm(`Delete "${meme.name}"?`)) return
-    deleteCustomMeme(id)
+    deleteMeme(id)
     setAllMemes(getAllMemes())
   }
 
