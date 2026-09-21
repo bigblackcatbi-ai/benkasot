@@ -168,12 +168,19 @@ function matchMeme(
     group.matched.length > 0 && group.weight >= 1,
   )
 
+  // Multi-signal memes should not fire from a partial match. Same-feature
+  // conditions remain OR, while different features are a real combination.
+  // Example: (HAPPY OR SAD) + OPEN requires both the expression group and
+  // mouth group. This removes most false positives caused by one noisy signal.
+  const allFeatureGroupsMatch = groupResults.every(group => group.matched.length > 0)
+
   const requiredMisses = conditions.filter(
     condition => condition.required && !conditionMatches(condition, analysis, face, hands),
   ).length
 
-  const relaxedThreshold = requiredMisses > 0 ? TRIGGER_THRESHOLD : 45
-  const triggered = hasPrimarySignal && score >= relaxedThreshold
+  const relaxedThreshold = requiredMisses > 0 ? TRIGGER_THRESHOLD : groupResults.length > 1 ? 62 : 45
+  const triggered = hasPrimarySignal &&
+    (groupResults.length === 1 ? score >= relaxedThreshold : allFeatureGroupsMatch && score >= relaxedThreshold)
 
   return {
     meme,
