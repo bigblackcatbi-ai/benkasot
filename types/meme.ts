@@ -22,6 +22,7 @@ export type MemeConditionValue =
   | 'wink-right'
   | 'neutral'
   | 'open'
+  | 'tongue-out'
   | 'frown'
   | 'excited'
   | 'smiling'
