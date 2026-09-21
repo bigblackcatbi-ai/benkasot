@@ -86,16 +86,28 @@ function analyzeFace(
 ) {
   if (!face || face.length < 400) return noFaceState()
 
+  // Landmarks are used only for simple eye/mouth/head states.
+  // Expression classification itself uses MediaPipe's trained blendshapes.
+  const neutral = baseline?.blendshapes ?? {}
+
+  const score = (name: string) =>
+    Math.max(0, (blendshapes?.find(shape => shape.categoryName === name)?.score ?? 0) - (neutral[name] ?? 0))
+
+  const avg = (...names: string[]) =>
+    names.reduce((sum, name) => sum + score(name), 0) / names.length
+
   const leftEyeWidth = distance(face[33], face[133])
   const rightEyeWidth = distance(face[362], face[263])
   const leftEyeOpen = distance(face[159], face[145]) / Math.max(leftEyeWidth, 0.001)
   const rightEyeOpen = distance(face[386], face[374]) / Math.max(rightEyeWidth, 0.001)
   const leftClosed = leftEyeOpen < 0.135
   const rightClosed = rightEyeOpen < 0.135
+
   const eyes: EyeState =
     leftClosed && !rightClosed ? 'WINK LEFT' :
     rightClosed && !leftClosed ? 'WINK RIGHT' :
     leftClosed && rightClosed ? 'CLOSED' : 'OPEN'
+
   const eyeThreshold = baseline ? Math.max(0.11, baseline.eyeOpen * 0.68) : 0.135
   const eyeConfidence = clamp01(
     (thresholdConfidence(leftEyeOpen, eyeThreshold, 0.11) +
@@ -107,21 +119,84 @@ function analyzeFace(
   const mouthCornerY = (face[61].y + face[291].y) / 2
   const lipCenterY = (face[13].y + face[14].y) / 2
   const smileOffset = (lipCenterY - mouthCornerY) / Math.max(mouthWidth, 0.001)
-  const expressionOffset = baseline ? smileOffset - baseline.smileOffset : smileOffset
-  const smile = expressionOffset > 0.048
-  const frown = expressionOffset < -0.048
+  const expressionOffset = smileOffset - (baseline?.smileOffset ?? smileOffset)
+
+  const smileMouth = avg('mouthSmileLeft', 'mouthSmileRight')
+  const frownMouth = avg('mouthFrownLeft', 'mouthFrownRight')
+  const browDown = avg('browDownLeft', 'browDownRight')
+  const browInnerUp = score('browInnerUp')
+  const jawOpen = score('jawOpen')
+  const eyeWide = avg('eyeWideLeft', 'eyeWideRight')
+  const eyeSquint = avg('eyeSquintLeft', 'eyeSquintRight')
+
   const mouthOpenThreshold = baseline ? Math.max(0.18, baseline.mouthOpen + 0.10) : 0.245
+  const mouthSmile = expressionOffset > 0.048 || smileMouth > 0.16
+  const mouthFrown = expressionOffset < -0.048 || frownMouth > 0.12
   const mouth: MouthState =
     mouthOpenRatio > mouthOpenThreshold ? 'OPEN' :
-    smile ? 'SMILE' :
-    frown ? 'FROWN' : 'CLOSED'
+    mouthSmile ? 'SMILE' :
+    mouthFrown ? 'FROWN' : 'CLOSED'
+
   const mouthOpenConfidence = thresholdConfidence(mouthOpenRatio, mouthOpenThreshold, 0.16)
-  const smileConfidence = thresholdConfidence(expressionOffset, 0.048, 0.075)
-  const frownConfidence = thresholdConfidence(expressionOffset, -0.048, 0.075)
-  const mouthConfidence = mouth === 'OPEN' ? mouthOpenConfidence :
-    mouth === 'SMILE' ? smileConfidence :
-    mouth === 'FROWN' ? frownConfidence :
-    clamp01(1 - Math.max(mouthOpenConfidence, smileConfidence, frownConfidence) * 0.8)
+  const mouthConfidence = mouth === 'OPEN'
+    ? mouthOpenConfidence
+    : mouth === 'SMILE'
+      ? clamp01(Math.max(thresholdConfidence(expressionOffset, 0.048, 0.075), smileMouth * 1.4))
+      : mouth === 'FROWN'
+        ? clamp01(Math.max(thresholdConfidence(expressionOffset, -0.048, 0.075), frownMouth * 1.5))
+        : 0.7
+
+  // Expression rules are intentionally mutually exclusive and conservative.
+  // A weak/ambiguous face becomes NEUTRAL instead of being forced into an
+  // incorrect emotion.
+  const happy = clamp01(
+    smileMouth * 1.45 +
+    avg('mouthDimpleLeft', 'mouthDimpleRight') * 0.20 +
+    eyeSquint * 0.10,
+  )
+
+  const sad = clamp01(
+    frownMouth * 1.55 +
+    browInnerUp * 0.20,
+  )
+
+  const angry = clamp01(
+    browDown * 1.55 +
+    eyeSquint * 0.20,
+  )
+
+  const surprised = clamp01(
+    jawOpen * 0.55 +
+    eyeWide * 0.30 +
+    browInnerUp * 0.15,
+  )
+
+  const smileLeft = score('mouthSmileLeft')
+  const smileRight = score('mouthSmileRight')
+  const smirk = clamp01(Math.abs(smileLeft - smileRight) * 2.5)
+
+  const candidates = [
+    { expression: 'HAPPY' as FaceExpression, score: happy, threshold: 0.58 },
+    { expression: 'SAD' as FaceExpression, score: sad, threshold: 0.52 },
+    { expression: 'ANGRY' as FaceExpression, score: angry, threshold: 0.56 },
+    { expression: 'SURPRISED' as FaceExpression, score: surprised, threshold: 0.62 },
+    { expression: 'SMIRK' as FaceExpression, score: smirk, threshold: 0.64 },
+  ].sort((a, b) => b.score - a.score)
+
+  const strongest = candidates[0]
+  const runnerUp = candidates[1]
+  const margin = strongest.score - (runnerUp?.score ?? 0)
+
+  // Require both a meaningful signal and separation from the next emotion.
+  // This is the key anti-misclassification guard.
+  const clearWinner =
+    strongest.score >= strongest.threshold &&
+    margin >= 0.12
+
+  const faceExpression = clearWinner ? strongest.expression : 'NEUTRAL' as FaceExpression
+  const expressionConfidence = clearWinner
+    ? clamp01(0.5 + strongest.score * 0.5)
+    : 0.25
 
   const eyeCenterX = (face[33].x + face[263].x) / 2
   const eyeDistance = Math.max(distance(face[33], face[263]), 0.001)
@@ -147,57 +222,6 @@ function analyzeFace(
     else if (yawOffset > 0.14) headDirection = 'RIGHT'
   }
 
-  // Face expression recognition uses MediaPipe's trained blendshapes.
-  // Landmarks remain available for spatial tasks, but they no longer decide
-  // whether a face is SAD/HAPPY/ANGRY/SMIRK.
-  const neutralBlendshapes = baseline?.blendshapes
-  const smile = averageBlendshape(blendshapes, ['mouthSmileLeft', 'mouthSmileRight'], neutralBlendshapes)
-  const frown = averageBlendshape(blendshapes, ['mouthFrownLeft', 'mouthFrownRight'], neutralBlendshapes)
-  const browDown = averageBlendshape(blendshapes, ['browDownLeft', 'browDownRight'], neutralBlendshapes)
-  const browUp = averageBlendshape(blendshapes, ['browInnerUp'], neutralBlendshapes)
-  const jawOpen = blendshapeScore(blendshapes, 'jawOpen', neutralBlendshapes)
-  const eyeWide = averageBlendshape(blendshapes, ['eyeWideLeft', 'eyeWideRight'], neutralBlendshapes)
-  const eyeSquint = averageBlendshape(blendshapes, ['eyeSquintLeft', 'eyeSquintRight'], neutralBlendshapes)
-
-  // These are action-unit signals, not emotion labels. We combine them only
-  // after subtracting the user's neutral face, which prevents a naturally
-  // upturned mouth or strong brow shape from becoming "HAPPY" or "ANGRY".
-  const happyConfidence = clamp01(smile * 1.15)
-  const sadConfidence = clamp01(frown * 0.90 + browUp * 0.10)
-  const surprisedConfidence = clamp01(
-    jawOpen * 0.45 + eyeWide * 0.40 + browUp * 0.15,
-  )
-  const angryConfidence = clamp01(
-    browDown * 0.72 + eyeSquint * 0.28,
-  )
-
-  const smileLeft = blendshapeScore(blendshapes, 'mouthSmileLeft', neutralBlendshapes)
-  const smileRight = blendshapeScore(blendshapes, 'mouthSmileRight', neutralBlendshapes)
-  const smirkConfidence = clamp01(Math.abs(smileLeft - smileRight) * 2.2)
-
-  const candidates = [
-    { expression: 'SURPRISED' as FaceExpression, score: surprisedConfidence, threshold: 0.58 },
-    { expression: 'HAPPY' as FaceExpression, score: happyConfidence, threshold: 0.62 },
-    { expression: 'SAD' as FaceExpression, score: sadConfidence, threshold: 0.55 },
-    { expression: 'ANGRY' as FaceExpression, score: angryConfidence, threshold: 0.52 },
-    { expression: 'SMIRK' as FaceExpression, score: smirkConfidence, threshold: 0.58 },
-  ].sort((a, b) => b.score - a.score)
-
-  const strongest = candidates[0]
-  const runnerUp = candidates[1]
-  const hasClearWinner = strongest.score >= strongest.threshold &&
-    (!runnerUp || strongest.score - runnerUp.score >= 0.10)
-
-  const faceExpression = hasClearWinner ? strongest.expression : 'NEUTRAL' as FaceExpression
-  const expressionConfidence = hasClearWinner ? strongest.score : 0.85
-
-  const expressionConfidence =
-    faceExpression === 'SURPRISED' ? surprisedConfidence :
-    faceExpression === 'HAPPY' ? happyConfidence :
-    faceExpression === 'SAD' ? sadConfidence :
-    faceExpression === 'ANGRY' ? angryConfidence :
-    faceExpression === 'SMIRK' ? smirkConfidence :
-    0.85
   const yawConfidence = clamp01(Math.max(
     thresholdConfidence(yawPosition, 0.41, 0.12),
     thresholdConfidence(yawPosition, 0.59, 0.12),
@@ -221,7 +245,6 @@ function analyzeFace(
     },
   }
 }
-
 const angle = (a: NormalizedLandmark, b: NormalizedLandmark, c: NormalizedLandmark) => {
   const abx = a.x - b.x, aby = a.y - b.y
   const cbx = c.x - b.x, cby = c.y - b.y
@@ -378,7 +401,7 @@ function smoothFaceState(raw: FaceAnalysis, previous: FaceAnalysis | null, pendi
     headDirection: settle(raw.headDirection, 'head', 'headCount', base.headDirection),
     visionConfidence: {
       ...raw.visionConfidence,
-      expression: Math.max(expressionConfidence, expressionChanged ? expressionKeepThreshold : 0),
+      expression: expressionConfidence,
     },
   }
 }
@@ -476,13 +499,27 @@ export function useExpressionGestureDetection(
           const mouthCornerY = (rawFace[61].y + rawFace[291].y) / 2
           const lipCenterY = (rawFace[13].y + rawFace[14].y) / 2
           const smileOffset = (lipCenterY - mouthCornerY) / Math.max(mouthWidth, 0.001)
-          baselineSamplesRef.current.push({ eyeOpen, mouthOpen, smileOffset })
+          const currentBlendshapes = faceBlendshapes.current[0] ?? []
+          const blendshapeMap = Object.fromEntries(
+            currentBlendshapes.map(shape => [shape.categoryName, shape.score]),
+          ) as Record<string, number>
+
+          baselineSamplesRef.current.push({ eyeOpen, mouthOpen, smileOffset, blendshapes: blendshapeMap })
           if (baselineSamplesRef.current.length >= 6) {
             const samples = baselineSamplesRef.current
+            const names = new Set(samples.flatMap(sample => Object.keys(sample.blendshapes)))
+            const blendshapesBaseline = Object.fromEntries(
+              [...names].map(name => [
+                name,
+                samples.reduce((sum, sample) => sum + (sample.blendshapes[name] ?? 0), 0) / samples.length,
+              ]),
+            )
+
             baselineRef.current = {
               eyeOpen: samples.reduce((sum, sample) => sum + sample.eyeOpen, 0) / samples.length,
               mouthOpen: samples.reduce((sum, sample) => sum + sample.mouthOpen, 0) / samples.length,
               smileOffset: samples.reduce((sum, sample) => sum + sample.smileOffset, 0) / samples.length,
+              blendshapes: blendshapesBaseline,
             }
             baselineSamplesRef.current = []
           }
