@@ -85,6 +85,7 @@ function conditionConfidence(
 
   if (condition.feature === 'mouth') {
     if (value === 'open') return analysis.mouth === 'OPEN' ? analysis.visionConfidence.mouth : 0
+    if (value === 'tongue-out') return analysis.mouth === 'TONGUE OUT' ? Math.max(analysis.signals.tongueOut, analysis.visionConfidence.mouth) : 0
     if (value === 'closed' || value === 'neutral') return analysis.mouth === 'CLOSED' ? analysis.visionConfidence.mouth : 0
     if (value === 'frown') return analysis.mouth === 'FROWN' ? analysis.visionConfidence.mouth : 0
     if (value === 'smiling') return analysis.mouth === 'SMILE' || analysis.faceExpression === 'HAPPY' ? Math.max(analysis.visionConfidence.mouth, analysis.visionConfidence.expression) : 0
@@ -363,7 +364,8 @@ export function useMemeTriggerEngine(
       const currentMatch = stableIdRef.current
         ? freshMatches.find(match => match.meme.id === stableIdRef.current) ?? null
         : null
-      const confirmationNeeded = candidate ? SWITCH_CONFIRM_SAMPLES : 0
+      const instantCandidate = candidate?.meme.trigger.conditions.some(condition => condition.enabled !== false && condition.feature === 'mouth' && condition.value === 'tongue-out') ?? false
+      const confirmationNeeded = candidate ? (instantCandidate ? 1 : SWITCH_CONFIRM_SAMPLES) : 0
 
       setDebug({
         candidateId: candidate?.meme.id ?? null,
@@ -424,7 +426,7 @@ export function useMemeTriggerEngine(
           candidateCountRef.current += 1
         }
 
-        if (candidateCountRef.current >= SWITCH_CONFIRM_SAMPLES) {
+        if (candidateCountRef.current >= confirmationNeeded) {
           stableIdRef.current = candidate.meme.id
           stableScoreRef.current = candidate.score
           stableBelowReleaseCountRef.current = 0
@@ -454,11 +456,11 @@ export function useMemeTriggerEngine(
         candidateCountRef.current += 1
       }
 
-      const confirmed = candidateCountRef.current >= SWITCH_CONFIRM_SAMPLES
+      const confirmed = candidateCountRef.current >= (instantCandidate ? 1 : SWITCH_CONFIRM_SAMPLES)
       const takeoverMarginMet = candidate.score >= currentScore + TAKEOVER_MARGIN
       const cooldownOver = now - lastSwitchAtRef.current >= SWITCH_COOLDOWN_MS
-      const mayTakeOver = confirmed && cooldownOver &&
-        (stableBelowReleaseCountRef.current >= RELEASE_SAMPLE_LIMIT || takeoverMarginMet)
+      const mayTakeOver = confirmed && (instantCandidate || cooldownOver) &&
+        (instantCandidate || stableBelowReleaseCountRef.current >= RELEASE_SAMPLE_LIMIT || takeoverMarginMet)
 
       if (mayTakeOver) {
         stableIdRef.current = candidate.meme.id
