@@ -14,6 +14,15 @@ export interface HandGestureState {
   gesture: HandGesture
 }
 
+export interface VisionConfidence {
+  face: number
+  expression: number
+  eyes: number
+  mouth: number
+  headDirection: number
+  hands: number[]
+}
+
 export interface VisionAnalysisState {
   facePresent: boolean
   faceExpression: FaceExpression
@@ -21,20 +30,27 @@ export interface VisionAnalysisState {
   mouth: MouthState
   headDirection: HeadDirection
   handGestures: HandGestureState[]
+  visionConfidence: VisionConfidence
 }
 
 const distance = (a: NormalizedLandmark, b: NormalizedLandmark) =>
   Math.hypot(a.x - b.x, a.y - b.y, (a.z ?? 0) - (b.z ?? 0))
 
-function noFaceState() {
+function noFaceState(): Omit<VisionAnalysisState, 'handGestures'> {
   return {
     facePresent: false,
     faceExpression: 'NO FACE' as FaceExpression,
     eyes: 'NO FACE' as EyeState,
     mouth: 'NO FACE' as MouthState,
     headDirection: 'NO FACE' as HeadDirection,
+    visionConfidence: { face: 0, expression: 0, eyes: 0, mouth: 0, headDirection: 0, hands: [] },
   }
 }
+
+const clamp01 = (value: number) => Math.max(0, Math.min(1, value))
+const thresholdConfidence = (value: number, threshold: number, scale: number) =>
+  clamp01(Math.abs(value - threshold) / Math.max(scale, 0.001))
+
 
 function analyzeFace(face: NormalizedLandmark[] | undefined) {
   if (!face || face.length < 400) return noFaceState()
@@ -49,6 +65,11 @@ function analyzeFace(face: NormalizedLandmark[] | undefined) {
     leftClosed && !rightClosed ? 'WINK LEFT' :
     rightClosed && !leftClosed ? 'WINK RIGHT' :
     leftClosed && rightClosed ? 'CLOSED' : 'OPEN'
+  const eyeThreshold = 0.135
+  const eyeConfidence = clamp01(
+    (thresholdConfidence(leftEyeOpen, eyeThreshold, 0.11) +
+      thresholdConfidence(rightEyeOpen, eyeThreshold, 0.11)) / 2,
+  )
 
   const mouthWidth = distance(face[61], face[291])
   const mouthOpenRatio = distance(face[13], face[14]) / Math.max(mouthWidth, 0.001)
@@ -61,6 +82,13 @@ function analyzeFace(face: NormalizedLandmark[] | undefined) {
     mouthOpenRatio > 0.245 ? 'OPEN' :
     smile ? 'SMILE' :
     frown ? 'FROWN' : 'CLOSED'
+  const mouthOpenConfidence = thresholdConfidence(mouthOpenRatio, 0.245, 0.16)
+  const smileConfidence = thresholdConfidence(smileOffset, 0.048, 0.075)
+  const frownConfidence = thresholdConfidence(smileOffset, -0.048, 0.075)
+  const mouthConfidence = mouth === 'OPEN' ? mouthOpenConfidence :
+    mouth === 'SMILE' ? smileConfidence :
+    mouth === 'FROWN' ? frownConfidence :
+    clamp01(1 - Math.max(mouthOpenConfidence, smileConfidence, frownConfidence) * 0.8)
 
   const eyeCenterX = (face[33].x + face[263].x) / 2
   const eyeDistance = Math.max(distance(face[33], face[263]), 0.001)
@@ -94,14 +122,49 @@ function analyzeFace(face: NormalizedLandmark[] | undefined) {
   const sad = mouth === 'FROWN'
   const surprised = eyes === 'OPEN' && mouth === 'OPEN'
   const asymmetry = Math.abs((face[61].y - face[291].y) / Math.max(mouthWidth, 0.001))
+  const smirkConfidence = thresholdConfidence(asymmetry, 0.14, 0.12)
+  const surprisedConfidence = clamp01((eyeConfidence + mouthOpenConfidence) / 2)
+  const expressionCandidates = [
+    { value: 'SURPRISED' as FaceExpression, confidence: surprisedConfidence },
+    { value: 'HAPPY' as FaceExpression, confidence: smileConfidence },
+    { value: 'SAD' as FaceExpression, confidence: frownConfidence },
+    { value: 'SMIRK' as FaceExpression, confidence: smirkConfidence },
+  ]
+  const bestExpression = expressionCandidates.reduce((best, current) =>
+    current.confidence > best.confidence ? current : best,
+  )
   const faceExpression: FaceExpression =
     surprised ? 'SURPRISED' :
     angry ? 'ANGRY' :
     happy ? 'HAPPY' :
     sad ? 'SAD' :
     asymmetry > 0.14 ? 'SMIRK' : 'NEUTRAL'
+  const expressionConfidence = faceExpression === 'SURPRISED' ? surprisedConfidence :
+    faceExpression === 'ANGRY' ? clamp01((eyeConfidence + 0.45) / 2) :
+    faceExpression === 'NEUTRAL' ? clamp01(1 - bestExpression.confidence) :
+    bestExpression.confidence
+  const yawConfidence = clamp01(Math.max(
+    thresholdConfidence(yawPosition, 0.41, 0.12),
+    thresholdConfidence(yawPosition, 0.59, 0.12),
+    thresholdConfidence(pitchPosition, 0.38, 0.14),
+    thresholdConfidence(pitchPosition, 0.57, 0.14),
+  ))
 
-  return { facePresent: true, faceExpression, eyes, mouth, headDirection }
+  return {
+    facePresent: true,
+    faceExpression,
+    eyes,
+    mouth,
+    headDirection,
+    visionConfidence: {
+      face: 1,
+      expression: expressionConfidence,
+      eyes: eyeConfidence,
+      mouth: mouthConfidence,
+      headDirection: yawConfidence,
+      hands: [],
+    },
+  }
 }
 
 const angle = (a: NormalizedLandmark, b: NormalizedLandmark, c: NormalizedLandmark) => {
@@ -197,6 +260,7 @@ function smoothFaceState(raw: FaceAnalysis, previous: FaceAnalysis | null, pendi
     eyes: settle(raw.eyes, 'eyes', 'eyesCount', base.eyes),
     mouth: settle(raw.mouth, 'mouth', 'mouthCount', base.mouth),
     headDirection: settle(raw.headDirection, 'head', 'headCount', base.headDirection),
+    visionConfidence: raw.visionConfidence,
   }
 }
 
@@ -279,7 +343,14 @@ export function useExpressionGestureDetection(
       }))
       const handGestures = smoothHandGestures(rawHandGestures)
 
-      setState({ ...faceState, handGestures })
+      setState({
+        ...faceState,
+        handGestures,
+        visionConfidence: {
+          ...faceState.visionConfidence,
+          hands: handGestures.map(hand => hand.gesture === 'UNKNOWN' ? 0.25 : 0.85),
+        },
+      })
     }
 
     update()
