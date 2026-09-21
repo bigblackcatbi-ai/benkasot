@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { RefObject } from 'react'
 import { FaceLandmarker, FilesetResolver } from '@mediapipe/tasks-vision'
+import type { NormalizedLandmark } from '@mediapipe/tasks-vision'
 
 const WASM_URL = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@1.0.1/wasm'
 const MODEL_URL = 'https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task'
@@ -21,6 +22,7 @@ export function useFaceLandmarker(videoRef: RefObject<HTMLVideoElement | null>, 
   const requestIdRef = useRef(0)
   const mountedRef = useRef(false)
   const lastTimestampRef = useRef(-1)
+  const landmarksRef = useRef<NormalizedLandmark[][]>([])
 
   const [state, setState] = useState<FaceDetectionState>({
     status: 'idle',
@@ -55,6 +57,7 @@ export function useFaceLandmarker(videoRef: RefObject<HTMLVideoElement | null>, 
   useEffect(() => {
     if (!enabled) {
       dispose()
+      landmarksRef.current = []
       setState({ status: 'idle', faceDetected: false, faceCount: 0, landmarkCount: 0 })
       return
     }
@@ -100,6 +103,7 @@ export function useFaceLandmarker(videoRef: RefObject<HTMLVideoElement | null>, 
             lastTimestampRef.current = timestamp
 
             const result = currentLandmarker.detectForVideo(currentVideo, timestamp)
+            landmarksRef.current = result.faceLandmarks
             const faceCount = result.faceLandmarks.length
             const landmarkCount = faceCount > 0 ? result.faceLandmarks[0].length : 0
 
@@ -118,6 +122,7 @@ export function useFaceLandmarker(videoRef: RefObject<HTMLVideoElement | null>, 
           frameRef.current = requestAnimationFrame(processFrame)
         }
 
+        landmarksRef.current = []
         setState({ status: 'active', faceDetected: false, faceCount: 0, landmarkCount: 0 })
         frameRef.current = requestAnimationFrame(processFrame)
       } catch (error) {
@@ -142,5 +147,5 @@ export function useFaceLandmarker(videoRef: RefObject<HTMLVideoElement | null>, 
     }
   }, [dispose, enabled, videoRef])
 
-  return state
+  return { ...state, landmarksRef }
 }
