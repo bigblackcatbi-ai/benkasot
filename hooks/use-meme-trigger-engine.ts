@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import { memes } from '@/lib/memes'
+import { getAllMemes } from '@/lib/memes'
 import type { Meme, MemeCondition } from '@/types/meme'
 import type { NormalizedLandmark } from '@mediapipe/tasks-vision'
 import type { VisionAnalysisState } from './use-expression-gesture-detection'
