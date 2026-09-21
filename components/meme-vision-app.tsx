@@ -400,7 +400,7 @@ function CreateMemePage() {
     { value: 'neutral', label: 'NEUTRAL FACE' },
     { value: 'squinting', label: 'SQUINT EYES' },
     { value: 'wide', label: 'WIDE EYES' },
-    { value: 'closed', label: 'BOTH EYES CLOSED' },
+    { value: 'eyes-closed', label: 'BOTH EYES CLOSED' },
     { value: 'wink-left', label: 'WINK LEFT' },
     { value: 'wink-right', label: 'WINK RIGHT' },
     { value: 'open', label: 'MOUTH OPEN' },
@@ -487,12 +487,13 @@ function CreateMemePage() {
   const buildCondition = (value: MemeConditionValue): MemeCondition => {
     const faceValues = new Set<MemeConditionValue>([
       'smiling', 'excited', 'crying', 'happy', 'sad', 'angry', 'smirk', 'neutral',
-      'squinting', 'wide', 'open', 'closed', 'frown', 'wink-left', 'wink-right',
+      'squinting', 'wide', 'open', 'closed', 'eyes-closed', 'frown', 'wink-left', 'wink-right',
       'upward', 'downward', 'left', 'right',
     ])
     if (faceValues.has(value)) {
-      const feature: MemeCondition['feature'] = ['squinting', 'wide', 'open', 'closed'].includes(value)
-        ? value === 'squinting' || value === 'wide' ? 'eyes' : 'mouth'
+      const feature: MemeCondition['feature'] = ['squinting', 'wide', 'eyes-closed', 'wink-left', 'wink-right'].includes(value)
+        ? 'eyes'
+        : ['open', 'closed', 'frown'].includes(value) ? 'mouth'
         : ['upward', 'right'].includes(value) ? 'gaze' : 'expression'
       return { feature, category: 'face', value, required: false }
     }
