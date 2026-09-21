@@ -55,6 +55,11 @@ export type MemeConditionValue =
   | 'pinch'
   | 'finger-gun'
   | 'unknown-gesture'
+  | 'both-fists'
+  | 'both-open-palms'
+  | 'both-thumbs-up'
+  | 'both-peace'
+  | 'two-hands'
 
 export interface MemeCondition {
   feature: MemeConditionFeature
