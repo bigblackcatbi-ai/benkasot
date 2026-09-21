@@ -488,7 +488,7 @@ function CreateMemePage() {
   const buildCondition = (value: MemeConditionValue): MemeCondition => {
     const faceValues = new Set<MemeConditionValue>([
       'smiling', 'excited', 'crying', 'happy', 'sad', 'angry', 'smirk', 'neutral',
-      'squinting', 'wide', 'open', 'closed', 'eyes-closed', 'frown', 'wink-left', 'wink-right',
+      'squinting', 'wide', 'open', 'tongue-out', 'closed', 'eyes-closed', 'frown', 'wink-left', 'wink-right',
       'upward', 'downward', 'left', 'right',
     ])
     if (faceValues.has(value)) {
