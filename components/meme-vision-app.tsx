@@ -15,8 +15,8 @@ const nav = [
 
 function Logo() { return <Link href="/" className="logo" aria-label="MEME VISION home"><span>MEME</span><b>//</b><span>VISION</span></Link> }
 
-function Button({ children, accent = 'black', className = '', onClick }: { children: React.ReactNode; accent?: string; className?: string; onClick?: () => void }) {
-  return <button onClick={onClick} className={`brutal-btn ${accent} ${className}`}>{children}</button>
+function Button({ children, accent = 'black', className = '', onClick, disabled = false }: { children: React.ReactNode; accent?: string; className?: string; onClick?: () => void; disabled?: boolean }) {
+  return <button onClick={onClick} disabled={disabled} className={`brutal-btn ${accent} ${className}`}>{children}</button>
 }
 
 function Shell({ children }: { children: React.ReactNode }) {
