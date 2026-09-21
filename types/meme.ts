@@ -33,6 +33,22 @@ export type MemeConditionValue =
   | 'hand-on-head'
   | 'both-hands-near-left-chest'
   | 'celebratory'
+  | 'happy'
+  | 'sad'
+  | 'angry'
+  | 'smirk'
+  | 'open-palm'
+  | 'thumbs-up'
+  | 'thumbs-down'
+  | 'pointing'
+  | 'peace'
+  | 'three-fingers'
+  | 'four-fingers'
+  | 'ok'
+  | 'rock'
+  | 'pinch'
+  | 'finger-gun'
+  | 'unknown-gesture'
 
 export interface MemeCondition {
   feature: MemeConditionFeature
