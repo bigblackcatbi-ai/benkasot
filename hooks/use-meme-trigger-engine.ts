@@ -57,6 +57,7 @@ function conditionMatches(
 
   if (condition.feature === 'expression') {
     if (value === 'excited') return analysis.faceExpression === 'SURPRISED' || analysis.faceExpression === 'HAPPY'
+    if (value === 'neutral') return analysis.faceExpression === 'NEUTRAL'
     if (value === 'smiling') return analysis.faceExpression === 'HAPPY' || analysis.mouth === 'SMILE'
     if (value === 'crying') return analysis.faceExpression === 'SAD' || analysis.mouth === 'FROWN'
     if (value === 'happy') return analysis.faceExpression === 'HAPPY'
