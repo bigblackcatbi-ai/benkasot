@@ -36,6 +36,10 @@ function conditionMatches(
     if (value === 'closed' || value === 'neutral') return analysis.mouth === 'CLOSED'
     if (value === 'smiling') return analysis.mouth === 'SMILE' || analysis.faceExpression === 'HAPPY'
     if (value === 'crying') return analysis.faceExpression === 'SAD' || analysis.mouth === 'FROWN'
+    if (value === 'happy') return analysis.faceExpression === 'HAPPY'
+    if (value === 'sad') return analysis.faceExpression === 'SAD'
+    if (value === 'angry') return analysis.faceExpression === 'ANGRY'
+    if (value === 'smirk') return analysis.faceExpression === 'SMIRK'
     return false
   }
 
@@ -66,7 +70,22 @@ function conditionMatches(
       const leftOfFace = hands.filter(hand => hand[0] && hand[0].x < faceCenter.x - 0.08).length
       return hands.length >= 2 && leftOfFace >= 2
     }
-    if (value === 'fist') return analysis.handGestures.some(hand => hand.gesture === 'FIST')
+    const gestureMap: Record<string, string> = {
+      fist: 'FIST',
+      'open-palm': 'OPEN PALM',
+      'thumbs-up': 'THUMBS UP',
+      'thumbs-down': 'THUMBS DOWN',
+      pointing: 'POINTING',
+      peace: 'PEACE',
+      'three-fingers': 'THREE FINGERS',
+      'four-fingers': 'FOUR FINGERS',
+      ok: 'OK',
+      rock: 'ROCK',
+      pinch: 'PINCH',
+      'finger-gun': 'FINGER GUN',
+      'unknown-gesture': 'UNKNOWN',
+    }
+    if (gestureMap[value]) return analysis.handGestures.some(hand => hand.gesture === gestureMap[value])
     return false
   }
 
