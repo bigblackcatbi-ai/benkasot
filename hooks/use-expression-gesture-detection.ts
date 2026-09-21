@@ -3,10 +3,10 @@
 import { useEffect, useState } from 'react'
 import type { NormalizedLandmark } from '@mediapipe/tasks-vision'
 
-export type FaceExpression = 'NEUTRAL' | 'SURPRISED' | 'HAPPY' | 'SAD' | 'ANGRY' | 'SMIRK'
-export type EyeState = 'OPEN' | 'CLOSED' | 'WINK LEFT' | 'WINK RIGHT'
-export type MouthState = 'OPEN' | 'CLOSED' | 'SMILE' | 'FROWN'
-export type HeadDirection = 'FORWARD' | 'LEFT' | 'RIGHT' | 'UP' | 'DOWN'
+export type FaceExpression = 'NO FACE' | 'NEUTRAL' | 'SURPRISED' | 'HAPPY' | 'SAD' | 'ANGRY' | 'SMIRK'
+export type EyeState = 'NO FACE' | 'OPEN' | 'CLOSED' | 'WINK LEFT' | 'WINK RIGHT'
+export type MouthState = 'NO FACE' | 'OPEN' | 'CLOSED' | 'SMILE' | 'FROWN'
+export type HeadDirection = 'NO FACE' | 'FORWARD' | 'LEFT' | 'RIGHT' | 'UP' | 'DOWN'
 export type HandGesture = 'OPEN PALM' | 'FIST' | 'THUMBS UP' | 'THUMBS DOWN' | 'POINTING' | 'PEACE' | 'THREE FINGERS' | 'FOUR FINGERS' | 'OK' | 'ROCK' | 'PINCH' | 'FINGER GUN' | 'UNKNOWN'
 
 export interface HandGestureState {
@@ -15,6 +15,7 @@ export interface HandGestureState {
 }
 
 export interface VisionAnalysisState {
+  facePresent: boolean
   faceExpression: FaceExpression
   eyes: EyeState
   mouth: MouthState
@@ -25,21 +26,18 @@ export interface VisionAnalysisState {
 const distance = (a: NormalizedLandmark, b: NormalizedLandmark) =>
   Math.hypot(a.x - b.x, a.y - b.y, (a.z ?? 0) - (b.z ?? 0))
 
-const angle = (a: NormalizedLandmark, b: NormalizedLandmark, c: NormalizedLandmark) => {
-  const abx = a.x - b.x, aby = a.y - b.y
-  const cbx = c.x - b.x, cby = c.y - b.y
-  const dot = abx * cbx + aby * cby
-  const mag = Math.hypot(abx, aby) * Math.hypot(cbx, cby)
-  return mag > 0 ? Math.acos(Math.min(1, Math.max(-1, dot / mag))) * 180 / Math.PI : 0
+function noFaceState() {
+  return {
+    facePresent: false,
+    faceExpression: 'NO FACE' as FaceExpression,
+    eyes: 'NO FACE' as EyeState,
+    mouth: 'NO FACE' as MouthState,
+    headDirection: 'NO FACE' as HeadDirection,
+  }
 }
 
 function analyzeFace(face: NormalizedLandmark[] | undefined) {
-  if (!face || face.length < 400) return {
-    faceExpression: 'NEUTRAL' as FaceExpression,
-    eyes: 'OPEN' as EyeState,
-    mouth: 'CLOSED' as MouthState,
-    headDirection: 'FORWARD' as HeadDirection,
-  }
+  if (!face || face.length < 400) return noFaceState()
 
   const leftEyeWidth = distance(face[33], face[133])
   const rightEyeWidth = distance(face[362], face[263])
@@ -59,14 +57,30 @@ function analyzeFace(face: NormalizedLandmark[] | undefined) {
 
   const eyeCenterX = (face[33].x + face[263].x) / 2
   const eyeCenterY = (face[33].y + face[263].y) / 2
+  const eyeDistance = Math.max(distance(face[33], face[263]), 0.001)
   const nose = face[1]
-  const horizontalOffset = nose.x - eyeCenterX
-  const verticalOffset = nose.y - eyeCenterY
+
+  // Normalize yaw/pitch against the face instead of using raw coordinates.
+  // This prevents the natural nose position below the eyes from being mistaken for "DOWN".
+  const faceX = face.slice(0, 468).map(point => point.x)
+  const faceY = face.slice(0, 468).map(point => point.y)
+  const minX = Math.min(...faceX)
+  const maxX = Math.max(...faceX)
+  const minY = Math.min(...faceY)
+  const maxY = Math.max(...faceY)
+  const yawPosition = (nose.x - minX) / Math.max(maxX - minX, 0.001)
+  const pitchPosition = (nose.y - minY) / Math.max(maxY - minY, 0.001)
+
   let headDirection: HeadDirection = 'FORWARD'
-  if (horizontalOffset < -0.055) headDirection = 'LEFT'
-  else if (horizontalOffset > 0.055) headDirection = 'RIGHT'
-  else if (verticalOffset < -0.11) headDirection = 'UP'
-  else if (verticalOffset > 0.11) headDirection = 'DOWN'
+  if (yawPosition < 0.43) headDirection = 'LEFT'
+  else if (yawPosition > 0.57) headDirection = 'RIGHT'
+  else if (pitchPosition < 0.40) headDirection = 'UP'
+  else if (pitchPosition > 0.55) headDirection = 'DOWN'
+  else {
+    const yawOffset = (nose.x - eyeCenterX) / eyeDistance
+    if (yawOffset < -0.12) headDirection = 'LEFT'
+    else if (yawOffset > 0.12) headDirection = 'RIGHT'
+  }
 
   const browLeft = face[105].y - face[159].y
   const browRight = face[334].y - face[386].y
@@ -77,7 +91,15 @@ function analyzeFace(face: NormalizedLandmark[] | undefined) {
   const asymmetry = Math.abs((face[61].y - face[291].y) / Math.max(mouthWidth, 0.001))
   const faceExpression: FaceExpression = surprised ? 'SURPRISED' : angry ? 'ANGRY' : happy ? 'HAPPY' : sad ? 'SAD' : asymmetry > 0.12 ? 'SMIRK' : 'NEUTRAL'
 
-  return { faceExpression, eyes, mouth, headDirection }
+  return { facePresent: true, faceExpression, eyes, mouth, headDirection }
+}
+
+const angle = (a: NormalizedLandmark, b: NormalizedLandmark, c: NormalizedLandmark) => {
+  const abx = a.x - b.x, aby = a.y - b.y
+  const cbx = c.x - b.x, cby = c.y - b.y
+  const dot = abx * cbx + aby * cby
+  const mag = Math.hypot(abx, aby) * Math.hypot(cbx, cby)
+  return mag > 0 ? Math.acos(Math.min(1, Math.max(-1, dot / mag))) * 180 / Math.PI : 0
 }
 
 const fingerAngle = (hand: NormalizedLandmark[], mcp: number, pip: number, tip: number) =>
@@ -93,30 +115,24 @@ function analyzeHand(hand: NormalizedLandmark[]): HandGesture {
   const middle = isExtended(hand, 9, 10, 12)
   const ring = isExtended(hand, 13, 14, 16)
   const pinky = isExtended(hand, 17, 18, 20)
-
-  const thumbTip = hand[4]
-  const thumbBase = hand[2]
-  const thumbExtended = distance(thumbTip, hand[0]) > distance(hand[3], hand[0]) * 1.02
-  const thumbUp = thumbTip.y < hand[2].y - 0.06
-  const thumbDown = thumbTip.y > hand[2].y + 0.08
+  const thumbExtended = distance(hand[4], hand[0]) > distance(hand[3], hand[0]) * 1.02
+  const thumbUp = hand[4].y < hand[2].y - 0.06
+  const thumbDown = hand[4].y > hand[2].y + 0.08
   const palmSize = Math.max(distance(hand[0], hand[9]), 0.001)
   const thumbIndexGap = distance(hand[4], hand[8]) / palmSize
-
   const extendedCount = [index, middle, ring, pinky].filter(Boolean).length
-  const foldedCount = 4 - extendedCount
 
   if (thumbIndexGap < 0.42 && middle && ring && pinky) return 'OK'
   if (thumbIndexGap < 0.34 && !middle && !ring && !pinky) return 'PINCH'
-  if (thumbUp && thumbExtended && foldedCount === 4) return 'THUMBS UP'
-  if (thumbDown && thumbExtended && foldedCount === 4) return 'THUMBS DOWN'
+  if (thumbUp && thumbExtended && extendedCount === 0) return 'THUMBS UP'
+  if (thumbDown && thumbExtended && extendedCount === 0) return 'THUMBS DOWN'
   if (index && !middle && !ring && pinky && thumbExtended) return 'FINGER GUN'
-  if (index && !middle && !ring && !pinky) return 'POINTING'
-  if (index && middle && !ring && !pinky) return 'PEACE'
-  if (index && middle && ring && !pinky) return 'THREE FINGERS'
-  if (index && middle && ring && pinky) return 'OPEN PALM'
-  if (!index && !middle && !ring && !pinky && !thumbExtended) return 'FIST'
   if (!index && !middle && !ring && pinky) return 'ROCK'
-  if (extendedCount === 4) return 'FOUR FINGERS'
+  if (index && middle && ring && pinky) return thumbExtended ? 'OPEN PALM' : 'FOUR FINGERS'
+  if (index && middle && ring && !pinky) return 'THREE FINGERS'
+  if (index && middle && !ring && !pinky) return 'PEACE'
+  if (index && !middle && !ring && !pinky) return 'POINTING'
+  if (!index && !middle && !ring && !pinky && !thumbExtended) return 'FIST'
   return 'UNKNOWN'
 }
 
@@ -127,16 +143,13 @@ export function useExpressionGestureDetection(
   enabled: boolean,
 ) {
   const [state, setState] = useState<VisionAnalysisState>({
-    faceExpression: 'NEUTRAL',
-    eyes: 'OPEN',
-    mouth: 'CLOSED',
-    headDirection: 'FORWARD',
+    ...noFaceState(),
     handGestures: [],
   })
 
   useEffect(() => {
     if (!enabled) {
-      setState({ faceExpression: 'NEUTRAL', eyes: 'OPEN', mouth: 'CLOSED', headDirection: 'FORWARD', handGestures: [] })
+      setState({ ...noFaceState(), handGestures: [] })
       return
     }
 
