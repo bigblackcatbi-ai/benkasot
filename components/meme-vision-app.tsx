@@ -344,6 +344,21 @@ function CreateMemePage() {
   const [selectedConditions, setSelectedConditions] = useState<MemeConditionValue[]>(['smiling'])
   const [saved, setSaved] = useState(false)
   const [error, setError] = useState('')
+  const [editId, setEditId] = useState<string | null>(null)
+
+  useEffect(() => {
+    const id = new URLSearchParams(window.location.search).get('edit')
+    if (!id) return
+    const existing = getMemeById(id)
+    if (!existing) return
+
+    setEditId(existing.id)
+    setName(existing.name)
+    setImagePath(existing.imagePath)
+    setImageName(existing.source === 'custom' ? 'CURRENT CUSTOM IMAGE' : 'CURRENT BUILT-IN IMAGE')
+    setMode(existing.trigger.type === 'combined' ? 'combined' : existing.trigger.type === 'gesture' ? 'gesture' : 'expression')
+    setSelectedConditions(existing.trigger.conditions.filter((condition) => condition.enabled !== false).map((condition) => condition.value))
+  }, [])
 
   const faceOptions: Array<{ value: MemeConditionValue; label: string }> = [
     { value: 'smiling', label: 'SMILE' },
@@ -460,7 +475,7 @@ function CreateMemePage() {
     const conditions = selectedConditions.map(buildCondition)
     const summary = selectedConditions.map((value) => value.replaceAll('-', ' ')).join(' + ')
     const meme: Meme = {
-      id: `custom-${Date.now()}`,
+      id: editId ?? `custom-${Date.now()}`,
       name: name.trim().toUpperCase(),
       shortLabel: name.trim().toUpperCase(),
       description: `Custom reaction triggered by ${summary}.`,
@@ -492,8 +507,8 @@ function CreateMemePage() {
 
   return <Shell><main className="page-pad content-page create-meme-page">
     <div className="page-title">
-      <Sticker color="pink">PHASE 10 / CUSTOM BUILDER</Sticker>
-      <h1>MAKE YOUR<br /><em>OWN MEME.</em></h1>
+      <Sticker color="pink">{editId ? 'PHASE 10 / EDIT MEME' : 'PHASE 10 / CUSTOM BUILDER'}</Sticker>
+      <h1>{editId ? <>EDIT YOUR<br /><em>MEME.</em></> : <>MAKE YOUR<br /><em>OWN MEME.</em></>}</h1>
       <p>Upload the reaction. Pick one or more signals. Combine face and hand conditions for precise reactions.</p>
     </div>
 
@@ -527,7 +542,7 @@ function CreateMemePage() {
         </div>
         <p className="custom-note-inline">Select multiple conditions. In combined mode you can mix FACE + HAND. Matching uses the same soft scoring system as the built-in memes.</p>
         <div className="custom-actions">
-          <Button accent="pink" onClick={saveMeme}><Zap size={16}/> {saved ? 'SAVED TO SESSION' : 'SAVE CUSTOM MEME'}</Button>
+          <Button accent="pink" onClick={saveMeme}><Zap size={16}/> {saved ? 'SAVED TO SESSION' : editId ? 'UPDATE MEME' : 'SAVE CUSTOM MEME'}</Button>
           {saved && <Link href="/camera" className="brutal-btn white">TEST IN CAMERA →</Link>}
         </div>
         {error && <div className="custom-error">{error}</div>}
