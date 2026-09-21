@@ -26,107 +26,122 @@ export interface MemeTriggerDebug {
 const distance = (a: NormalizedLandmark, b: NormalizedLandmark) =>
   Math.hypot(a.x - b.x, a.y - b.y, (a.z ?? 0) - (b.z ?? 0))
 
+function conditionConfidence(
+  condition: MemeCondition,
+  analysis: VisionAnalysisState,
+  face: NormalizedLandmark[] | undefined,
+  hands: NormalizedLandmark[][],
+): number {
+  const value = condition.value
+
+  if (condition.feature === 'eyes') {
+    if (value === 'squinting') return analysis.eyes === 'CLOSED' || analysis.eyes.startsWith('WINK') ? analysis.visionConfidence.eyes : 0
+    if (value === 'wide') return analysis.eyes === 'OPEN' && analysis.mouth === 'OPEN'
+      ? Math.min(analysis.visionConfidence.eyes, analysis.visionConfidence.mouth)
+      : analysis.faceExpression === 'SURPRISED' ? analysis.visionConfidence.expression : 0
+    if (value === 'eyes-closed') return analysis.eyes === 'CLOSED' ? analysis.visionConfidence.eyes : 0
+    if (value === 'wink-left') return analysis.eyes === 'WINK LEFT' ? analysis.visionConfidence.eyes : 0
+    if (value === 'wink-right') return analysis.eyes === 'WINK RIGHT' ? analysis.visionConfidence.eyes : 0
+    return 0
+  }
+
+  if (condition.feature === 'mouth') {
+    if (value === 'open') return analysis.mouth === 'OPEN' ? analysis.visionConfidence.mouth : 0
+    if (value === 'closed' || value === 'neutral') return analysis.mouth === 'CLOSED' ? analysis.visionConfidence.mouth : 0
+    if (value === 'frown') return analysis.mouth === 'FROWN' ? analysis.visionConfidence.mouth : 0
+    if (value === 'smiling') return analysis.mouth === 'SMILE' || analysis.faceExpression === 'HAPPY' ? Math.max(analysis.visionConfidence.mouth, analysis.visionConfidence.expression) : 0
+    if (value === 'crying' || value === 'sad') return analysis.faceExpression === 'SAD' || analysis.mouth === 'FROWN' ? Math.max(analysis.visionConfidence.expression, analysis.visionConfidence.mouth) : 0
+    if (value === 'happy') return analysis.faceExpression === 'HAPPY' ? analysis.visionConfidence.expression : 0
+    if (value === 'angry') return analysis.faceExpression === 'ANGRY' ? analysis.visionConfidence.expression : 0
+    if (value === 'smirk') return analysis.faceExpression === 'SMIRK' ? analysis.visionConfidence.expression : 0
+    return 0
+  }
+
+  if (condition.feature === 'expression') {
+    if (value === 'neutral') return analysis.faceExpression === 'NEUTRAL' ? analysis.visionConfidence.expression : 0
+    if (value === 'excited') return analysis.faceExpression === 'SURPRISED' || analysis.faceExpression === 'HAPPY' ? analysis.visionConfidence.expression : 0
+    if (value === 'smiling') return analysis.faceExpression === 'HAPPY' || analysis.mouth === 'SMILE' ? Math.max(analysis.visionConfidence.expression, analysis.visionConfidence.mouth) : 0
+    if (value === 'crying' || value === 'sad') return analysis.faceExpression === 'SAD' ? analysis.visionConfidence.expression : 0
+    if (value === 'happy') return analysis.faceExpression === 'HAPPY' ? analysis.visionConfidence.expression : 0
+    if (value === 'angry') return analysis.faceExpression === 'ANGRY' ? analysis.visionConfidence.expression : 0
+    if (value === 'smirk') return analysis.faceExpression === 'SMIRK' ? analysis.visionConfidence.expression : 0
+    return 0
+  }
+
+  if (condition.feature === 'gaze') {
+    const expected: Record<string, string> = { upward: 'UP', downward: 'DOWN', left: 'LEFT', right: 'RIGHT' }
+    return expected[value] === analysis.headDirection ? analysis.visionConfidence.headDirection : 0
+  }
+
+  if (condition.feature === 'hands') {
+    if (!hands.length) return 0
+    const faceCenter = face?.[1]
+    if (!faceCenter) return 0
+    const nearHeadScores = hands.map(hand => {
+      const wrist = hand[0]
+      if (!wrist) return 0
+      const d = Math.hypot(wrist.x - faceCenter.x, wrist.y - faceCenter.y)
+      return Math.max(0, Math.min(1, (0.42 - d) / 0.22))
+    })
+    const nearHead = nearHeadScores.filter(score => score > 0.15).length
+    if (value === 'hands-on-head' || value === 'both-hands-near-head') return hands.length >= 2 && nearHead >= 2 ? Math.min(...nearHeadScores.filter(score => score > 0.15)) : 0
+    if (value === 'hand-on-head') return Math.max(...nearHeadScores, 0)
+    if (value === 'both-hands-near-left-chest') {
+      const scores = hands.map(hand => hand[0] && hand[0].x < faceCenter.x - 0.08 ? 0.75 : 0)
+      return hands.length >= 2 && scores.filter(Boolean).length >= 2 ? Math.min(...scores.filter(Boolean)) : 0
+    }
+    if (value === 'two-hands') return hands.length >= 2 ? Math.min(...analysis.visionConfidence.hands.slice(0, 2)) : 0
+
+    const gestureMap: Record<string, string> = {
+      fist: 'FIST', 'open-palm': 'OPEN PALM', 'thumbs-up': 'THUMBS UP', 'thumbs-down': 'THUMBS DOWN',
+      pointing: 'POINTING', peace: 'PEACE', 'three-fingers': 'THREE FINGERS', 'four-fingers': 'FOUR FINGERS',
+      ok: 'OK', rock: 'ROCK', pinch: 'PINCH', 'finger-gun': 'FINGER GUN', 'unknown-gesture': 'UNKNOWN',
+    }
+    if (gestureMap[value]) {
+      const scores = analysis.handGestures.map((hand, i) => hand.gesture === gestureMap[value] ? (analysis.visionConfidence.hands[i] ?? 0) : 0)
+      return Math.max(...scores, 0)
+    }
+
+    const bothGestureMap: Record<string, string> = {
+      'both-fists': 'FIST', 'both-open-palms': 'OPEN PALM', 'both-thumbs-up': 'THUMBS UP', 'both-peace': 'PEACE',
+    }
+    if (bothGestureMap[value]) {
+      const scores = analysis.handGestures.map((hand, i) => hand.gesture === bothGestureMap[value] ? (analysis.visionConfidence.hands[i] ?? 0) : 0).filter(Boolean)
+      return hands.length >= 2 && scores.length >= 2 ? Math.min(...scores) : 0
+    }
+    return 0
+  }
+
+  if (condition.feature === 'finger') {
+    const faceCenter = face?.[1]
+    if (!faceCenter) return 0
+    const handConfidence = analysis.visionConfidence.hands
+    const proximity = (d: number, limit: number) => Math.max(0, Math.min(1, (limit - d) / (limit * 0.65)))
+    if (value === 'index-finger-near-mouth') {
+      const scores = hands.map((hand, i) => hand[8] && face?.[13] ? proximity(distance(hand[8], face[13]), 0.16) * (handConfidence[i] ?? 0) : 0)
+      return Math.max(...scores, 0)
+    }
+    if (value === 'index-finger-near-head') {
+      const scores = hands.map((hand, i) => hand[8] ? proximity(Math.hypot(hand[8].x - faceCenter.x, hand[8].y - faceCenter.y), 0.22) * (handConfidence[i] ?? 0) : 0)
+      return Math.max(...scores, 0)
+    }
+    if (value === 'index-finger-to-chest') {
+      const scores = hands.map((hand, i) => hand[8] && hand[0] && hand[8].y > faceCenter.y + 0.18 ? (handConfidence[i] ?? 0) : 0)
+      return Math.max(...scores, 0)
+    }
+    return 0
+  }
+
+  return 0
+}
+
 function conditionMatches(
   condition: MemeCondition,
   analysis: VisionAnalysisState,
   face: NormalizedLandmark[] | undefined,
   hands: NormalizedLandmark[][],
 ) {
-  const value = condition.value
-
-  if (condition.feature === 'eyes') {
-    if (value === 'squinting') return analysis.eyes === 'CLOSED' || analysis.eyes.startsWith('WINK')
-    if (value === 'wide') return analysis.faceExpression === 'SURPRISED' || (analysis.eyes === 'OPEN' && analysis.mouth === 'OPEN')
-    if (value === 'eyes-closed') return analysis.eyes === 'CLOSED'
-    if (value === 'wink-left') return analysis.eyes === 'WINK LEFT'
-    if (value === 'wink-right') return analysis.eyes === 'WINK RIGHT'
-    return false
-  }
-
-  if (condition.feature === 'mouth') {
-    if (value === 'open') return analysis.mouth === 'OPEN'
-    if (value === 'closed' || value === 'neutral') return analysis.mouth === 'CLOSED'
-    if (value === 'smiling') return analysis.mouth === 'SMILE' || analysis.faceExpression === 'HAPPY'
-    if (value === 'crying') return analysis.faceExpression === 'SAD' || analysis.mouth === 'FROWN'
-    if (value === 'happy') return analysis.faceExpression === 'HAPPY'
-    if (value === 'sad') return analysis.faceExpression === 'SAD'
-    if (value === 'angry') return analysis.faceExpression === 'ANGRY'
-    if (value === 'smirk') return analysis.faceExpression === 'SMIRK'
-    return false
-  }
-
-  if (condition.feature === 'expression') {
-    if (value === 'excited') return analysis.faceExpression === 'SURPRISED' || analysis.faceExpression === 'HAPPY'
-    if (value === 'neutral') return analysis.faceExpression === 'NEUTRAL'
-    if (value === 'smiling') return analysis.faceExpression === 'HAPPY' || analysis.mouth === 'SMILE'
-    if (value === 'crying') return analysis.faceExpression === 'SAD' || analysis.mouth === 'FROWN'
-    if (value === 'happy') return analysis.faceExpression === 'HAPPY'
-    if (value === 'sad') return analysis.faceExpression === 'SAD'
-    if (value === 'angry') return analysis.faceExpression === 'ANGRY'
-    if (value === 'smirk') return analysis.faceExpression === 'SMIRK'
-    return false
-  }
-
-  if (condition.feature === 'gaze') {
-    if (value === 'upward') return analysis.headDirection === 'UP'
-    if (value === 'downward') return analysis.headDirection === 'DOWN'
-    if (value === 'left') return analysis.headDirection === 'LEFT'
-    if (value === 'right') return analysis.headDirection === 'RIGHT'
-    return false
-  }
-
-  if (condition.feature === 'hands') {
-    if (!hands.length) return false
-    const faceCenter = face?.[1]
-    if (!faceCenter) return false
-    const nearHead = hands.filter(hand => {
-      const wrist = hand[0]
-      return wrist && Math.hypot(wrist.x - faceCenter.x, wrist.y - faceCenter.y) < 0.42
-    }).length
-    if (value === 'hands-on-head' || value === 'both-hands-near-head') return hands.length >= 2 && nearHead >= 2
-    if (value === 'hand-on-head') return nearHead >= 1
-    if (value === 'both-hands-near-left-chest') {
-      const leftOfFace = hands.filter(hand => hand[0] && hand[0].x < faceCenter.x - 0.08).length
-      return hands.length >= 2 && leftOfFace >= 2
-    }
-    if (value === 'two-hands') return hands.length >= 2
-    const bothGestureMap: Record<string, string> = {
-      'both-fists': 'FIST',
-      'both-open-palms': 'OPEN PALM',
-      'both-thumbs-up': 'THUMBS UP',
-      'both-peace': 'PEACE',
-    }
-    if (bothGestureMap[value]) return hands.length >= 2 && analysis.handGestures.filter(hand => hand.gesture === bothGestureMap[value]).length >= 2
-    const gestureMap: Record<string, string> = {
-      fist: 'FIST',
-      'open-palm': 'OPEN PALM',
-      'thumbs-up': 'THUMBS UP',
-      'thumbs-down': 'THUMBS DOWN',
-      pointing: 'POINTING',
-      peace: 'PEACE',
-      'three-fingers': 'THREE FINGERS',
-      'four-fingers': 'FOUR FINGERS',
-      ok: 'OK',
-      rock: 'ROCK',
-      pinch: 'PINCH',
-      'finger-gun': 'FINGER GUN',
-      'unknown-gesture': 'UNKNOWN',
-    }
-    if (gestureMap[value]) return analysis.handGestures.some(hand => hand.gesture === gestureMap[value])
-    return false
-  }
-
-  if (condition.feature === 'finger') {
-    const faceCenter = face?.[1]
-    if (!faceCenter) return false
-    if (value === 'index-finger-near-mouth') return hands.some(hand => hand[8] && face?.[13] && distance(hand[8], face[13]) < 0.16)
-    if (value === 'index-finger-near-head') return hands.some(hand => hand[8] && Math.hypot(hand[8].x - faceCenter.x, hand[8].y - faceCenter.y) < 0.22)
-    if (value === 'index-finger-to-chest') return hands.some(hand => hand[8] && hand[0] && hand[8].y > faceCenter.y + 0.18)
-    return false
-  }
-
-  if (condition.feature === 'movement') return false
-  return false
+  return conditionConfidence(condition, analysis, face, hands) > 0.15
 }
 
 const CONDITION_WEIGHTS: Record<MemeCondition['feature'], number> = {
@@ -166,28 +181,21 @@ function matchMeme(
     .map(feature => conditions.filter(condition => condition.feature === feature))
 
   const groupResults = groups.map(group => {
-    const matched = group.filter(condition => conditionMatches(condition, analysis, face, hands))
+    const scored = group.map(condition => ({ condition, confidence: conditionConfidence(condition, analysis, face, hands) }))
+    const matched = scored.filter(item => item.confidence > 0.15).map(item => item.condition)
     const weight = Math.max(...group.map(condition => CONDITION_WEIGHTS[condition.feature] ?? 1))
-    const confidenceForFeature = (feature: MemeCondition['feature']) => {
-      if (feature === 'eyes') return analysis.visionConfidence.eyes
-      if (feature === 'mouth') return analysis.visionConfidence.mouth
-      if (feature === 'expression') return analysis.visionConfidence.expression
-      if (feature === 'gaze') return analysis.visionConfidence.headDirection
-      if (feature === 'hands') return analysis.visionConfidence.hands.length
-        ? Math.max(...analysis.visionConfidence.hands)
-        : 0
-      if (feature === 'finger') return analysis.visionConfidence.hands.length
-        ? Math.max(...analysis.visionConfidence.hands)
-        : 0
-      return 0
-    }
-    const groupScore = matched.length > 0 ? confidenceForFeature(group[0].feature) : 0
+    const groupScore = Math.max(...scored.map(item => item.confidence), 0)
     return { group, matched, weight, groupScore }
   })
 
   const totalWeight = groupResults.reduce((sum, group) => sum + group.weight, 0)
   const matchedWeight = groupResults.reduce((sum, group) => sum + group.weight * group.groupScore, 0)
-  const score = totalWeight ? Math.round((matchedWeight / totalWeight) * 100) : 0
+  const weightedAverage = totalWeight ? matchedWeight / totalWeight : 0
+  const weakestSignal = groupResults.length > 1 ? Math.min(...groupResults.map(group => group.groupScore)) : weightedAverage
+  const combinedConfidence = groupResults.length > 1
+    ? Math.sqrt(Math.max(0, weightedAverage) * Math.max(0, weakestSignal))
+    : weightedAverage
+  const score = Math.round(combinedConfidence * 100)
   const matched = groupResults.reduce((sum, group) => sum + group.matched.length, 0)
 
   const hasPrimarySignal = groupResults.some(group =>
@@ -207,7 +215,7 @@ function matchMeme(
   const relaxedThreshold = requiredMisses > 0 ? TRIGGER_THRESHOLD : groupResults.length > 1 ? 62 : 45
   const confidenceGate = groupResults.length > 1 ? 0.5 : 0.42
   const strongestConfidence = Math.max(...groupResults.map(group => group.groupScore), 0)
-  const triggered = hasPrimarySignal && strongestConfidence >= confidenceGate &&
+  const triggered = hasPrimarySignal && weakestSignal >= confidenceGate && strongestConfidence >= confidenceGate &&
     (groupResults.length === 1 ? score >= relaxedThreshold : allFeatureGroupsMatch && score >= relaxedThreshold)
 
   return {
