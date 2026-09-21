@@ -49,6 +49,7 @@ export function useLearnedGesture(
   handLandmarks: React.MutableRefObject<NormalizedLandmark[][]>,
   handedness: React.MutableRefObject<string[]>,
   enabled: boolean,
+  profiles: LearnedGestureProfile[],
 ) {
   const [recording, setRecording] = useState(false)
   const [progress, setProgress] = useState(0)
@@ -136,7 +137,6 @@ export function useLearnedGesture(
         const normalized = canonicalize(hand, label)
         if (!normalized) return
 
-        const profiles = window.__MEME_VISION_LEARNED_GESTURES__ ?? []
         profiles.forEach(profile => {
           if (profile.handedness !== 'Any' && label !== 'Any' && profile.handedness !== label) return
           const score = compare(normalized, profile.landmarks)
@@ -149,7 +149,7 @@ export function useLearnedGesture(
     const interval = window.setInterval(update, 150)
     update()
     return () => window.clearInterval(interval)
-  }, [enabled, recordedLandmarks, handLandmarks, handedness])
+  }, [enabled, recordedLandmarks, handLandmarks, handedness, profiles])
 
   useEffect(() => {
     return () => {
