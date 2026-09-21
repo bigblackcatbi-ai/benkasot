@@ -23,6 +23,12 @@ export interface VisionConfidence {
   hands: number[]
 }
 
+export interface VisionBaseline {
+  eyeOpen: number
+  mouthOpen: number
+  smileOffset: number
+}
+
 export interface VisionAnalysisState {
   facePresent: boolean
   faceExpression: FaceExpression
@@ -31,6 +37,7 @@ export interface VisionAnalysisState {
   headDirection: HeadDirection
   handGestures: HandGestureState[]
   visionConfidence: VisionConfidence
+  baseline: VisionBaseline | null
 }
 
 const distance = (a: NormalizedLandmark, b: NormalizedLandmark) =>
@@ -44,6 +51,7 @@ function noFaceState(): Omit<VisionAnalysisState, 'handGestures'> {
     mouth: 'NO FACE' as MouthState,
     headDirection: 'NO FACE' as HeadDirection,
     visionConfidence: { face: 0, expression: 0, eyes: 0, mouth: 0, headDirection: 0, hands: [] },
+    baseline: null,
   }
 }
 
@@ -52,7 +60,7 @@ const thresholdConfidence = (value: number, threshold: number, scale: number) =>
   clamp01(Math.abs(value - threshold) / Math.max(scale, 0.001))
 
 
-function analyzeFace(face: NormalizedLandmark[] | undefined) {
+function analyzeFace(face: NormalizedLandmark[] | undefined, baseline: VisionBaseline | null) {
   if (!face || face.length < 400) return noFaceState()
 
   const leftEyeWidth = distance(face[33], face[133])
@@ -65,7 +73,7 @@ function analyzeFace(face: NormalizedLandmark[] | undefined) {
     leftClosed && !rightClosed ? 'WINK LEFT' :
     rightClosed && !leftClosed ? 'WINK RIGHT' :
     leftClosed && rightClosed ? 'CLOSED' : 'OPEN'
-  const eyeThreshold = 0.135
+  const eyeThreshold = baseline ? Math.max(0.11, baseline.eyeOpen * 0.68) : 0.135
   const eyeConfidence = clamp01(
     (thresholdConfidence(leftEyeOpen, eyeThreshold, 0.11) +
       thresholdConfidence(rightEyeOpen, eyeThreshold, 0.11)) / 2,
@@ -76,15 +84,17 @@ function analyzeFace(face: NormalizedLandmark[] | undefined) {
   const mouthCornerY = (face[61].y + face[291].y) / 2
   const lipCenterY = (face[13].y + face[14].y) / 2
   const smileOffset = (lipCenterY - mouthCornerY) / Math.max(mouthWidth, 0.001)
-  const smile = smileOffset > 0.048
-  const frown = smileOffset < -0.048
+  const expressionOffset = baseline ? smileOffset - baseline.smileOffset : smileOffset
+  const smile = expressionOffset > 0.048
+  const frown = expressionOffset < -0.048
+  const mouthOpenThreshold = baseline ? Math.max(0.18, baseline.mouthOpen + 0.10) : 0.245
   const mouth: MouthState =
-    mouthOpenRatio > 0.245 ? 'OPEN' :
+    mouthOpenRatio > mouthOpenThreshold ? 'OPEN' :
     smile ? 'SMILE' :
     frown ? 'FROWN' : 'CLOSED'
-  const mouthOpenConfidence = thresholdConfidence(mouthOpenRatio, 0.245, 0.16)
-  const smileConfidence = thresholdConfidence(smileOffset, 0.048, 0.075)
-  const frownConfidence = thresholdConfidence(smileOffset, -0.048, 0.075)
+  const mouthOpenConfidence = thresholdConfidence(mouthOpenRatio, mouthOpenThreshold, 0.16)
+  const smileConfidence = thresholdConfidence(expressionOffset, 0.048, 0.075)
+  const frownConfidence = thresholdConfidence(expressionOffset, -0.048, 0.075)
   const mouthConfidence = mouth === 'OPEN' ? mouthOpenConfidence :
     mouth === 'SMILE' ? smileConfidence :
     mouth === 'FROWN' ? frownConfidence :
@@ -311,6 +321,9 @@ export function useExpressionGestureDetection(
   })
   const handGestureRef = useRef<HandGestureState[]>([])
   const pendingHandRef = useRef<Array<{ gesture: HandGesture; count: number }>>([])
+  const baselineRef = useRef<VisionBaseline | null>(null)
+  const baselineSamplesRef = useRef<VisionBaseline[]>([])
+  const neutralSinceRef = useRef(0)
 
   const smoothHandGestures = (raw: HandGestureState[]) => {
     const result = raw.map((hand, index) => {
@@ -338,6 +351,9 @@ export function useExpressionGestureDetection(
     if (!enabled) {
       setState({ ...noFaceState(), handGestures: [] })
       previousFaceRef.current = null
+      baselineRef.current = null
+      baselineSamplesRef.current = []
+      neutralSinceRef.current = 0
       pendingFaceRef.current = {
         expression: 'NO FACE',
         expressionCount: 0,
@@ -354,7 +370,39 @@ export function useExpressionGestureDetection(
     }
 
     const update = () => {
-      const rawFaceState = analyzeFace(faceLandmarks.current[0])
+      const rawFaceState = analyzeFace(faceLandmarks.current[0], baselineRef.current)
+
+      // Auto-calibrate only after the user has genuinely looked neutral for
+      // ~700ms. This prevents calibrating from a smile or reaction.
+      const rawFace = faceLandmarks.current[0]
+      if (rawFace && rawFace.length >= 400 && rawFaceState.faceExpression === 'NEUTRAL') {
+        if (!neutralSinceRef.current) neutralSinceRef.current = performance.now()
+        if (performance.now() - neutralSinceRef.current >= 700 && !baselineRef.current) {
+          const leftEyeWidth = distance(rawFace[33], rawFace[133])
+          const rightEyeWidth = distance(rawFace[362], rawFace[263])
+          const eyeOpen = (
+            distance(rawFace[159], rawFace[145]) / Math.max(leftEyeWidth, 0.001) +
+            distance(rawFace[386], rawFace[374]) / Math.max(rightEyeWidth, 0.001)
+          ) / 2
+          const mouthWidth = distance(rawFace[61], rawFace[291])
+          const mouthOpen = distance(rawFace[13], rawFace[14]) / Math.max(mouthWidth, 0.001)
+          const mouthCornerY = (rawFace[61].y + rawFace[291].y) / 2
+          const lipCenterY = (rawFace[13].y + rawFace[14].y) / 2
+          const smileOffset = (lipCenterY - mouthCornerY) / Math.max(mouthWidth, 0.001)
+          baselineSamplesRef.current.push({ eyeOpen, mouthOpen, smileOffset })
+          if (baselineSamplesRef.current.length >= 6) {
+            const samples = baselineSamplesRef.current
+            baselineRef.current = {
+              eyeOpen: samples.reduce((sum, sample) => sum + sample.eyeOpen, 0) / samples.length,
+              mouthOpen: samples.reduce((sum, sample) => sum + sample.mouthOpen, 0) / samples.length,
+              smileOffset: samples.reduce((sum, sample) => sum + sample.smileOffset, 0) / samples.length,
+            }
+            baselineSamplesRef.current = []
+          }
+        }
+      } else {
+        neutralSinceRef.current = 0
+      }
       const faceState = smoothFaceState(rawFaceState, previousFaceRef.current, pendingFaceRef.current)
       previousFaceRef.current = faceState
 
@@ -373,6 +421,7 @@ export function useExpressionGestureDetection(
           ...faceState.visionConfidence,
           hands: handGestures.map(hand => hand.gesture === 'UNKNOWN' ? 0.25 : 0.85),
         },
+        baseline: baselineRef.current,
       })
     }
 
