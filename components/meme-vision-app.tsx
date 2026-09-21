@@ -392,16 +392,23 @@ function CreateMemePage() {
   const faceOptions: Array<{ value: MemeConditionValue; label: string }> = [
     { value: 'smiling', label: 'SMILE' },
     { value: 'excited', label: 'EXCITED' },
-    { value: 'crying', label: 'CRYING' },
     { value: 'happy', label: 'HAPPY' },
     { value: 'sad', label: 'SAD' },
+    { value: 'crying', label: 'CRYING / TEARY' },
     { value: 'angry', label: 'ANGRY' },
     { value: 'smirk', label: 'SMIRK' },
+    { value: 'neutral', label: 'NEUTRAL FACE' },
     { value: 'squinting', label: 'SQUINT EYES' },
     { value: 'wide', label: 'WIDE EYES' },
+    { value: 'closed', label: 'BOTH EYES CLOSED' },
+    { value: 'wink-left', label: 'WINK LEFT' },
+    { value: 'wink-right', label: 'WINK RIGHT' },
     { value: 'open', label: 'MOUTH OPEN' },
     { value: 'closed', label: 'MOUTH CLOSED' },
+    { value: 'frown', label: 'FROWN MOUTH' },
     { value: 'upward', label: 'LOOK UP' },
+    { value: 'downward', label: 'LOOK DOWN' },
+    { value: 'left', label: 'LOOK LEFT' },
     { value: 'right', label: 'LOOK RIGHT' },
   ]
 
@@ -421,6 +428,12 @@ function CreateMemePage() {
     { value: 'rock', label: 'ROCK' },
     { value: 'pinch', label: 'PINCH' },
     { value: 'finger-gun', label: 'FINGER GUN' },
+    { value: 'unknown-gesture', label: 'UNKNOWN HAND POSE' },
+    { value: 'both-fists', label: 'BOTH HANDS = FIST' },
+    { value: 'both-open-palms', label: 'BOTH HANDS = OPEN PALM' },
+    { value: 'both-thumbs-up', label: 'BOTH HANDS = THUMBS UP' },
+    { value: 'both-peace', label: 'BOTH HANDS = PEACE' },
+    { value: 'two-hands', label: 'TWO HANDS DETECTED' },
     { value: 'index-finger-near-mouth', label: 'FINGER NEAR MOUTH' },
     { value: 'index-finger-near-head', label: 'FINGER NEAR HEAD' },
     { value: 'index-finger-to-chest', label: 'FINGER TO CHEST' },
@@ -473,8 +486,9 @@ function CreateMemePage() {
 
   const buildCondition = (value: MemeConditionValue): MemeCondition => {
     const faceValues = new Set<MemeConditionValue>([
-      'smiling', 'excited', 'crying', 'happy', 'sad', 'angry', 'smirk',
-      'squinting', 'wide', 'open', 'closed', 'upward', 'right',
+      'smiling', 'excited', 'crying', 'happy', 'sad', 'angry', 'smirk', 'neutral',
+      'squinting', 'wide', 'open', 'closed', 'frown', 'wink-left', 'wink-right',
+      'upward', 'downward', 'left', 'right',
     ])
     if (faceValues.has(value)) {
       const feature: MemeCondition['feature'] = ['squinting', 'wide', 'open', 'closed'].includes(value)
