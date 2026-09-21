@@ -127,11 +127,11 @@ const CONDITION_WEIGHTS: Record<MemeCondition['feature'], number> = {
 }
 
 const TRIGGER_THRESHOLD = 55
-const FAST_TRIGGER_SCORE = 82
-const NORMAL_TRIGGER_SCORE = 65
 const LOCK_MS = 1100
-const TAKEOVER_MARGIN = 12
-const TAKEOVER_SCORE = 78
+const EXIT_SCORE = 38
+const FAST_TRIGGER_SCORE = 88
+const NORMAL_TRIGGER_SCORE = 65
+const MISS_LIMIT = 3
 
 function matchMeme(
   meme: Meme,
@@ -226,6 +226,7 @@ export function useMemeTriggerEngine(
   const stableIdRef = useRef<string | null>(null)
   const stableScoreRef = useRef(0)
   const stableUntilRef = useRef(0)
+  const missCountRef = useRef(0)
 
   useEffect(() => {
     if (!enabled) {
@@ -235,6 +236,7 @@ export function useMemeTriggerEngine(
       stableIdRef.current = null
       stableScoreRef.current = 0
       stableUntilRef.current = 0
+      missCountRef.current = 0
       return
     }
 
@@ -263,39 +265,62 @@ export function useMemeTriggerEngine(
         lockRemainingMs: Math.max(0, stableUntilRef.current - now),
       })
 
-      // The overlay follows the current face state immediately.
-      // No stale winner lock: neutral/no-match removes it, and a new reaction
-      // can replace the previous meme on the next detection tick.
+      // Meme-level hysteresis: once an overlay is active, small confidence
+      // dips do not make it blink off. A new meme also needs confirmation
+      // unless its signal is exceptionally strong.
       if (!candidate) {
+        missCountRef.current += 1
+        if (stableIdRef.current && missCountRef.current < MISS_LIMIT) {
+          const held = getAllMemes().find(meme => meme.id === stableIdRef.current)
+          if (held) {
+            setMatches([{ meme: held, score: Math.max(EXIT_SCORE, stableScoreRef.current), matched: 0, total: held.trigger.conditions.length }])
+            return
+          }
+        }
+
         setMatches([])
         stableIdRef.current = null
         stableScoreRef.current = 0
         stableUntilRef.current = 0
         candidateIdRef.current = null
         candidateCountRef.current = 0
+        missCountRef.current = 0
+        return
+      }
+
+      missCountRef.current = 0
+
+      if (stableIdRef.current === candidate.meme.id) {
+        candidateIdRef.current = candidate.meme.id
+        candidateCountRef.current += 1
+        stableScoreRef.current = candidate.score
+        stableUntilRef.current = now + LOCK_MS
+        setMatches(freshMatches)
         return
       }
 
       if (candidateIdRef.current !== candidate.meme.id) {
         candidateIdRef.current = candidate.meme.id
         candidateCountRef.current = 1
-
-        // Switching reactions should be immediate.
-        if (stableIdRef.current && stableIdRef.current !== candidate.meme.id) {
-          stableIdRef.current = candidate.meme.id
-          stableScoreRef.current = candidate.score
-          stableUntilRef.current = 0
-          setMatches(freshMatches)
-          return
-        }
       } else {
         candidateCountRef.current += 1
       }
 
-      stableIdRef.current = candidate.meme.id
-      stableScoreRef.current = candidate.score
-      stableUntilRef.current = now + LOCK_MS
-      setMatches(freshMatches)
+      const needed = candidate.score >= FAST_TRIGGER_SCORE ? 1 : candidate.score >= NORMAL_TRIGGER_SCORE ? 2 : 3
+      const confirmed = candidateCountRef.current >= needed
+
+      if (!stableIdRef.current || confirmed) {
+        stableIdRef.current = candidate.meme.id
+        stableScoreRef.current = candidate.score
+        stableUntilRef.current = now + LOCK_MS
+        setMatches(freshMatches)
+      } else {
+        // Keep the previous overlay while a competing meme proves itself.
+        const held = getAllMemes().find(meme => meme.id === stableIdRef.current)
+        if (held) {
+          setMatches([{ meme: held, score: stableScoreRef.current, matched: 0, total: held.trigger.conditions.length }])
+        }
+      }
     }
 
     update()
