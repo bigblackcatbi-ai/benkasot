@@ -201,10 +201,10 @@ function CameraPage() {
         <div className="analysis-box">
           <div className="analysis-heading"><span>EXPRESSION / GESTURE</span><b>LIVE</b></div>
           <div className="analysis-section"><small>FACE</small><div className="analysis-grid">
-            <span>EXPRESSION</span><strong>{analysis.faceExpression}</strong>
-            <span>EYES</span><strong>{analysis.eyes}</strong>
-            <span>MOUTH</span><strong>{analysis.mouth}</strong>
-            <span>HEAD</span><strong>{analysis.headDirection}</strong>
+            <span>EXPRESSION</span><strong>{analysis.facePresent ? analysis.faceExpression : 'NO FACE'}</strong>
+            <span>EYES</span><strong>{analysis.facePresent ? analysis.eyes : 'NO FACE'}</strong>
+            <span>MOUTH</span><strong>{analysis.facePresent ? analysis.mouth : 'NO FACE'}</strong>
+            <span>HEAD</span><strong>{analysis.facePresent ? analysis.headDirection : 'NO FACE'}</strong>
           </div></div>
           <div className="analysis-section"><small>HANDS</small>
             {analysis.handGestures.length ? analysis.handGestures.map((hand, index) => <div className="gesture-row" key={hand.handedness + index}><span>{hand.handedness === 'Hand' ? `HAND ${index + 1}` : hand.handedness}</span><strong>{hand.gesture}</strong></div>) : <div className="gesture-empty">NO HAND GESTURE DETECTED</div>}
