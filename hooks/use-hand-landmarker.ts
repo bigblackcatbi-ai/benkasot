@@ -25,6 +25,7 @@ export function useHandLandmarker(videoRef: RefObject<HTMLVideoElement | null>, 
   const mountedRef = useRef(false)
   const lastTimestampRef = useRef(-1)
   const landmarksRef = useRef<NormalizedLandmark[][]>([])
+  const handednessRef = useRef<string[]>([])
 
   const [state, setState] = useState<HandDetectionState>({
     status: 'idle',
@@ -62,6 +63,7 @@ export function useHandLandmarker(videoRef: RefObject<HTMLVideoElement | null>, 
     if (!enabled) {
       dispose()
       landmarksRef.current = []
+      handednessRef.current = []
       setState({
         status: 'idle',
         handDetected: false,
@@ -114,6 +116,7 @@ export function useHandLandmarker(videoRef: RefObject<HTMLVideoElement | null>, 
 
             const result = currentLandmarker.detectForVideo(currentVideo, timestamp)
             landmarksRef.current = result.landmarks
+            handednessRef.current = result.handednesses.flat().map((category) => category.categoryName ?? '')
             const handCount = result.landmarks.length
             const landmarkCount = handCount * 21
             const handedness = result.handednesses.flat()
@@ -139,6 +142,7 @@ export function useHandLandmarker(videoRef: RefObject<HTMLVideoElement | null>, 
         }
 
         landmarksRef.current = []
+        handednessRef.current = []
         setState({
           status: 'active',
           handDetected: false,
@@ -172,5 +176,5 @@ export function useHandLandmarker(videoRef: RefObject<HTMLVideoElement | null>, 
     }
   }, [dispose, enabled, videoRef])
 
-  return { ...state, landmarksRef }
+  return { ...state, landmarksRef, handednessRef }
 }
