@@ -7,6 +7,7 @@ import { Camera, ChevronRight, Cpu, History, ImagePlus, LayoutGrid, Mic, Pause, 
 import { memes } from '@/lib/memes'
 import type { Meme } from '@/types/meme'
 import { useCamera } from '@/hooks/use-camera'
+import { useFaceLandmarker } from '@/hooks/use-face-landmarker'
 
 const nav = [
   ['CAMERA', '/camera', Camera], ['MEMES', '/memes', LayoutGrid], ['CREATE', '/memes/create', Plus], ['LEARN', '/learn', Sparkles], ['HISTORY', '/history', History], ['SETTINGS', '/settings', Settings],
@@ -48,12 +49,13 @@ function CameraPage() {
 
   const isActive = camera.status === 'active'
   const isRequesting = camera.status === 'requesting'
+  const face = useFaceLandmarker(camera.videoRef, isActive)
 
   return <Shell><main className="camera-page page-pad">
-    <div className="camera-topline"><div><Sticker color={isActive ? 'mint' : camera.status === 'denied' || camera.status === 'unavailable' || camera.status === 'error' ? 'pink' : 'yellow'}>● {isActive ? 'CAMERA LIVE' : isRequesting ? 'REQUESTING CAMERA' : 'CAMERA OFF'}</Sticker><span className="technical">{camera.devices.length ? `${camera.devices.length} CAMERA${camera.devices.length === 1 ? '' : 'S'} AVAILABLE` : 'CAMERA DEVICE'}</span></div><div className="technical">LOCAL CAMERA · NO AUDIO</div></div>
+    <div className="camera-topline"><div><Sticker color={isActive ? 'mint' : camera.status === 'denied' || camera.status === 'unavailable' || camera.status === 'error' ? 'pink' : 'yellow'}>● {isActive ? 'CAMERA LIVE' : isRequesting ? 'REQUESTING CAMERA' : 'CAMERA OFF'}</Sticker><span className="technical">{camera.devices.length ? `${camera.devices.length} CAMERA${camera.devices.length === 1 ? '' : 'S'} AVAILABLE` : 'CAMERA DEVICE'}</span></div><div className="technical">MEDIAPIPE FACE · NO AUDIO</div></div>
     <div className="camera-workspace">
       <section className="camera-stage">
-        <div className="stage-header"><span>LIVE VIEWPORT // 001</span><span>LOCAL CAMERA INPUT</span></div>
+        <div className="stage-header"><span>LIVE VIEWPORT // 001</span><span>LOCAL VISION INPUT</span></div>
         <div className="camera-viewport">
           <video ref={camera.videoRef} autoPlay muted playsInline aria-label="Live camera preview" />
           {!isActive && <div className="camera-status-message"><strong>{isRequesting ? 'ALLOW CAMERA ACCESS' : camera.status === 'idle' ? 'CAMERA STOPPED' : 'CAMERA UNAVAILABLE'}</strong><span>{camera.error ?? 'Your live camera preview will appear here.'}</span>{camera.status !== 'denied' && camera.status !== 'unavailable' && camera.status !== 'error' && <Button accent="pink" onClick={() => void camera.start()}>START CAMERA</Button>}{camera.status === 'denied' && <Button accent="pink" onClick={() => void camera.start()}>TRY AGAIN</Button>}</div>}
@@ -68,13 +70,15 @@ function CameraPage() {
         </div>
       </section>
       <aside className="detect-panel">
-        <div className="panel-heading"><span>CAMERA STATUS</span><SlidersHorizontal size={17}/></div>
-        <div className="detect-row"><span>STATUS</span><b>{camera.status.toUpperCase()}</b></div>
-        <div className="detect-row"><span>CAMERAS</span><b>{camera.devices.length}</b></div>
-        <div className="detect-row"><span>DEVICE</span><b>{camera.devices.find((device) => device.deviceId === camera.selectedDeviceId)?.label ?? 'DEFAULT'}</b></div>
-        {camera.error && <div className="match-box"><span>CAMERA MESSAGE</span><h2>CHECK ACCESS</h2><p>{camera.error}</p></div>}
+        <div className="panel-heading"><span>FACE DETECTION</span><SlidersHorizontal size={17}/></div>
+        <div className="detect-row"><span>CAMERA</span><b>{camera.status.toUpperCase()}</b></div>
+        <div className="detect-row"><span>MEDIAPIPE</span><b>{face.status.toUpperCase()}</b></div>
+        <div className="detect-row"><span>FACE</span><b><i className="green-dot"/> {face.faceDetected ? 'DETECTED' : 'NOT DETECTED'}</b></div>
+        <div className="detect-row"><span>FACES</span><b>{face.faceCount}</b></div>
+        <div className="detect-row"><span>LANDMARKS</span><b>{face.landmarkCount}</b></div>
+        {face.error && <div className="match-box"><span>VISION MESSAGE</span><h2>CHECK MEDIAPIPE</h2><p>{face.error}</p></div>}
         {camera.devices.length > 0 && <div className="trigger"><div className="trigger-title"><span>CAMERA DEVICE</span></div>{camera.devices.map((device) => <label className="toggle" key={device.deviceId}><span>{device.label}</span><input type="radio" name="camera-device" checked={device.deviceId === camera.selectedDeviceId} onChange={() => void camera.selectDevice(device.deviceId)}/><i/></label>)}</div>}
-        <div className="trigger"><div className="trigger-title"><span>VISION FEATURES</span></div><p>Detection is intentionally disabled in Phase 3.</p><small>REAL CAMERA → VIDEO ONLY</small></div>
+        <div className="trigger"><div className="trigger-title"><span>PHASE 4</span></div><p>MediaPipe is detecting face landmarks only. Hands, expressions, triggers and overlays remain disabled.</p><small>FACE LANDMARKS → LOCAL PROCESSING</small></div>
         <label className="toggle"><span>SHOW MOCK MEME</span><input type="checkbox" checked={overlay} onChange={(event) => setOverlay(event.target.checked)}/><i/></label>
       </aside>
     </div>
