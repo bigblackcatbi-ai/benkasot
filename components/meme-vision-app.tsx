@@ -278,7 +278,11 @@ function CameraPage() {
     faceExpression: fer.expression === 'NO FACE'
       ? actionAnalysis.faceExpression
       : fer.expression === 'surprise' ? 'SURPRISED'
-      : fer.expression.toUpperCase() as typeof actionAnalysis.faceExpression,
+      : fer.expression === 'happy' ? 'HAPPY'
+      : fer.expression === 'sad' ? 'SAD'
+      : fer.expression === 'angry' ? 'ANGRY'
+      : fer.expression === 'neutral' ? 'NEUTRAL'
+      : 'NEUTRAL',
     signals: {
       ...actionAnalysis.signals,
       angry: fer.probabilities.angry,
