@@ -55,12 +55,28 @@ function noFaceState(): Omit<VisionAnalysisState, 'handGestures'> {
   }
 }
 
+type Blendshape = { categoryName: string; score: number }
+
+const blendshapeScore = (
+  blendshapes: Blendshape[] | undefined,
+  name: string,
+) => blendshapes?.find(shape => shape.categoryName === name)?.score ?? 0
+
+const averageBlendshape = (
+  blendshapes: Blendshape[] | undefined,
+  names: string[],
+) => names.reduce((sum, name) => sum + blendshapeScore(blendshapes, name), 0) / names.length
+
 const clamp01 = (value: number) => Math.max(0, Math.min(1, value))
 const thresholdConfidence = (value: number, threshold: number, scale: number) =>
   clamp01(Math.abs(value - threshold) / Math.max(scale, 0.001))
 
 
-function analyzeFace(face: NormalizedLandmark[] | undefined, baseline: VisionBaseline | null) {
+function analyzeFace(
+  face: NormalizedLandmark[] | undefined,
+  baseline: VisionBaseline | null,
+  blendshapes: Blendshape[] | undefined,
+) {
   if (!face || face.length < 400) return noFaceState()
 
   const leftEyeWidth = distance(face[33], face[133])
@@ -124,54 +140,46 @@ function analyzeFace(face: NormalizedLandmark[] | undefined, baseline: VisionBas
     else if (yawOffset > 0.14) headDirection = 'RIGHT'
   }
 
-  // Keep expression recognition intentionally simple. We are not trying to
-  // classify every subtle facial movement from hundreds of landmarks.
-  // Strong, easy-to-understand signals win in a fixed order.
-  const browLeft = face[105].y - face[159].y
-  const browRight = face[334].y - face[386].y
-  const browDown = browLeft > -0.055 && browRight > -0.055
-  const browConfidence = clamp01(
-    (thresholdConfidence(browLeft, -0.055, 0.045) +
-      thresholdConfidence(browRight, -0.055, 0.045)) / 2,
+  // Face expression recognition uses MediaPipe's trained blendshapes.
+  // Landmarks remain available for spatial tasks, but they no longer decide
+  // whether a face is SAD/HAPPY/ANGRY/SMIRK.
+  const smile = averageBlendshape(blendshapes, ['mouthSmileLeft', 'mouthSmileRight'])
+  const frown = averageBlendshape(blendshapes, ['mouthFrownLeft', 'mouthFrownRight'])
+  const browDown = averageBlendshape(blendshapes, ['browDownLeft', 'browDownRight'])
+  const browUp = averageBlendshape(blendshapes, ['browInnerUp'])
+  const jawOpen = blendshapeScore(blendshapes, 'jawOpen')
+  const eyeWide = averageBlendshape(blendshapes, ['eyeWideLeft', 'eyeWideRight'])
+  const eyeSquint = averageBlendshape(blendshapes, ['eyeSquintLeft', 'eyeSquintRight'])
+
+  const happyConfidence = clamp01(smile)
+  const sadConfidence = clamp01(frown * 0.9 + browUp * 0.1)
+  const surprisedConfidence = clamp01(
+    (jawOpen * 0.45) + (eyeWide * 0.40) + (browUp * 0.15),
+  )
+  const angryConfidence = clamp01(
+    (browDown * 0.65) + (eyeSquint * 0.25) + (frown * 0.10),
   )
 
-  const happy = smileConfidence >= 0.48
-  const sad = frownConfidence >= 0.48
-
-  // Anger needs a combination that is different from sadness. In particular,
-  // a frown is allowed to be SAD without also becoming ANGRY.
-  const angry = browDown && !happy && !sad && eyes === 'OPEN' && browConfidence >= 0.62
-  const angryConfidence = angry
-    ? clamp01((browConfidence + eyeConfidence) / 2)
+  // Smirk requires clear left/right smile imbalance and is deliberately
+  // lower priority than a genuine happy/sad/surprised/angry signal.
+  const smileLeft = blendshapeScore(blendshapes, 'mouthSmileLeft')
+  const smileRight = blendshapeScore(blendshapes, 'mouthSmileRight')
+  const smirkConfidence = !happyConfidence && !sadConfidence
+    ? clamp01(Math.abs(smileLeft - smileRight) * 2.2)
     : 0
 
-  const surprised = eyes === 'OPEN' && mouth === 'OPEN' &&
-    eyeConfidence >= 0.5 && mouthOpenConfidence >= 0.5
-  const surprisedConfidence = surprised
-    ? clamp01((eyeConfidence + mouthOpenConfidence) / 2)
-    : 0
-
-  const asymmetry = Math.abs((face[61].y - face[291].y) / Math.max(mouthWidth, 0.001))
-  const smirkConfidence = !happy && !sad && !surprised
-    ? clamp01(thresholdConfidence(asymmetry, 0.16, 0.10))
-    : 0
-
-  // Priority is deliberate:
-  // SURPRISED > HAPPY > SAD > ANGRY > SMIRK > NEUTRAL.
-  // This makes obvious expressions stable and prevents one weak signal
-  // from stealing the label from a stronger expression.
   const faceExpression: FaceExpression =
-    surprised ? 'SURPRISED' :
-    happy ? 'HAPPY' :
-    sad ? 'SAD' :
-    angry ? 'ANGRY' :
-    smirkConfidence >= 0.65 ? 'SMIRK' :
+    surprisedConfidence >= 0.62 ? 'SURPRISED' :
+    happyConfidence >= 0.52 ? 'HAPPY' :
+    sadConfidence >= 0.48 && sadConfidence >= angryConfidence ? 'SAD' :
+    angryConfidence >= 0.58 ? 'ANGRY' :
+    smirkConfidence >= 0.55 ? 'SMIRK' :
     'NEUTRAL'
 
   const expressionConfidence =
     faceExpression === 'SURPRISED' ? surprisedConfidence :
-    faceExpression === 'HAPPY' ? smileConfidence :
-    faceExpression === 'SAD' ? frownConfidence :
+    faceExpression === 'HAPPY' ? happyConfidence :
+    faceExpression === 'SAD' ? sadConfidence :
     faceExpression === 'ANGRY' ? angryConfidence :
     faceExpression === 'SMIRK' ? smirkConfidence :
     0.85
@@ -363,6 +371,7 @@ function smoothFaceState(raw: FaceAnalysis, previous: FaceAnalysis | null, pendi
 export function useExpressionGestureDetection(
   faceLandmarks: React.MutableRefObject<NormalizedLandmark[][]>,
   handLandmarks: React.MutableRefObject<NormalizedLandmark[][]>,
+  faceBlendshapes: React.MutableRefObject<Array<Blendshape[]>>,
   handedness: React.MutableRefObject<string[]>,
   enabled: boolean,
 ) {
@@ -433,7 +442,7 @@ export function useExpressionGestureDetection(
     }
 
     const update = () => {
-      const rawFaceState = analyzeFace(faceLandmarks.current[0], baselineRef.current)
+      const rawFaceState = analyzeFace(faceLandmarks.current[0], baselineRef.current, faceBlendshapes.current[0])
 
       // Auto-calibrate only after the user has genuinely looked neutral for
       // ~700ms. This prevents calibrating from a smile or reaction.
