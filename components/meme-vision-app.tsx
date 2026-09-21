@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Camera, ChevronRight, Cpu, History, ImagePlus, LayoutGrid, Mic, Pause, Play, Plus, RotateCcw, Settings, Sparkles, SlidersHorizontal, Video, Zap } from 'lucide-react'
 import { memes } from '@/lib/memes'
 import type { Meme } from '@/types/meme'
@@ -39,9 +39,110 @@ function Home() {
 
 function MemeCard({ meme, index = 0 }: { meme: Meme; index?: number }) { return <article className="meme-card"><Placeholder label={index % 3 === 1 ? '!!!' : meme.shortLabel} color={meme.accentColor}/><div className="meme-card-body"><div className="card-kicker"><span className={`dot ${meme.accentColor}`} /> {meme.typeLabel}</div><h3>{meme.name}</h3><p>{meme.triggerSummary}</p><div className="card-footer"><span className="active-status">● {meme.enabled ? 'ACTIVE' : 'DISABLED'}</span><Link href={`/memes/${meme.id}`} className="small-link">EDIT →</Link></div></div></article> }
 
+function LandmarkOverlay({ enabled, video, faceLandmarks, handLandmarks }: { enabled: boolean; video: HTMLVideoElement | null; faceLandmarks: React.MutableRefObject<import('@mediapipe/tasks-vision').NormalizedLandmark[][]>; handLandmarks: React.MutableRefObject<import('@mediapipe/tasks-vision').NormalizedLandmark[][]> }) {
+  const canvasRef = useRef<HTMLCanvasElement | null>(null)
+
+  useEffect(() => {
+    if (!enabled || !video) return
+
+    const canvas = canvasRef.current
+    if (!canvas) return
+
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return
+
+    let frame = 0
+    const draw = () => {
+      const width = canvas.clientWidth
+      const height = canvas.clientHeight
+      const dpr = window.devicePixelRatio || 1
+      const pixelWidth = Math.max(1, Math.round(width * dpr))
+      const pixelHeight = Math.max(1, Math.round(height * dpr))
+
+      if (canvas.width !== pixelWidth || canvas.height !== pixelHeight) {
+        canvas.width = pixelWidth
+        canvas.height = pixelHeight
+      }
+
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+      ctx.clearRect(0, 0, width, height)
+
+      const videoWidth = video.videoWidth || width
+      const videoHeight = video.videoHeight || height
+      const scale = Math.max(width / videoWidth, height / videoHeight)
+      const renderedWidth = videoWidth * scale
+      const renderedHeight = videoHeight * scale
+      const offsetX = (width - renderedWidth) / 2
+      const offsetY = (height - renderedHeight) / 2
+
+      const point = (landmark: { x: number; y: number }) => ({
+        x: offsetX + landmark.x * renderedWidth,
+        y: offsetY + landmark.y * renderedHeight,
+      })
+
+      const dot = (landmark: { x: number; y: number }, radius = 1.5) => {
+        const p = point(landmark)
+        ctx.beginPath()
+        ctx.arc(p.x, p.y, radius, 0, Math.PI * 2)
+        ctx.fill()
+      }
+
+      const line = (a: { x: number; y: number }, b: { x: number; y: number }) => {
+        const start = point(a)
+        const end = point(b)
+        ctx.beginPath()
+        ctx.moveTo(start.x, start.y)
+        ctx.lineTo(end.x, end.y)
+        ctx.stroke()
+      }
+
+      ctx.lineWidth = 0.65
+      ctx.globalAlpha = 0.72
+
+      const faces = faceLandmarks.current
+      if (faces[0]) {
+        const face = faces[0]
+        ctx.strokeStyle = '#111'
+        ctx.fillStyle = '#111'
+
+        // A light mesh: nearby landmark pairs plus the face outline.
+        for (let i = 0; i < face.length - 1; i += 2) line(face[i], face[i + 1])
+        const outline = [10, 338, 297, 332, 284, 251, 389, 356, 454, 323, 361, 288, 397, 365, 379, 378, 400, 377, 152, 148, 176, 149, 150, 136, 172, 58, 132, 93, 234, 127, 162, 21, 54, 103, 67, 109, 10]
+        for (let i = 0; i < outline.length - 1; i++) {
+          const a = face[outline[i]]
+          const b = face[outline[i + 1]]
+          if (a && b) line(a, b)
+        }
+        face.forEach((landmark) => dot(landmark, 1.15))
+      }
+
+      const hands = handLandmarks.current
+      const connections = [[0,1],[1,2],[2,3],[3,4],[0,5],[5,6],[6,7],[7,8],[5,9],[9,10],[10,11],[11,12],[9,13],[13,14],[14,15],[15,16],[13,17],[17,18],[18,19],[19,20],[0,17]]
+      hands.forEach((hand) => {
+        ctx.strokeStyle = '#ff5e88'
+        ctx.fillStyle = '#ff5e88'
+        connections.forEach(([a,b]) => {
+          if (hand[a] && hand[b]) line(hand[a], hand[b])
+        })
+        hand.forEach((landmark) => dot(landmark, 1.7))
+      })
+
+      ctx.globalAlpha = 1
+      frame = requestAnimationFrame(draw)
+    }
+
+    frame = requestAnimationFrame(draw)
+    return () => cancelAnimationFrame(frame)
+  }, [enabled, video, faceLandmarks, handLandmarks])
+
+  if (!enabled) return null
+  return <canvas ref={canvasRef} className="landmark-overlay" aria-hidden="true" />
+}
+
 function CameraPage() {
   const camera = useCamera()
   const [overlay, setOverlay] = useState(true)
+  const [goatBot, setGoatBot] = useState(false)
 
   useEffect(() => {
     void camera.start()
@@ -60,11 +161,13 @@ function CameraPage() {
         <div className="stage-header"><span>LIVE VIEWPORT // 001</span><span>LOCAL VISION INPUT</span></div>
         <div className="camera-viewport">
           <video ref={camera.videoRef} autoPlay muted playsInline aria-label="Live camera preview" />
+          <LandmarkOverlay enabled={goatBot && isActive} video={camera.videoRef.current} faceLandmarks={face.landmarksRef} handLandmarks={hands.landmarksRef} />
           {!isActive && <div className="camera-status-message"><strong>{isRequesting ? 'ALLOW CAMERA ACCESS' : camera.status === 'idle' ? 'CAMERA STOPPED' : 'CAMERA UNAVAILABLE'}</strong><span>{camera.error ?? 'Your live camera preview will appear here.'}</span>{camera.status !== 'denied' && camera.status !== 'unavailable' && camera.status !== 'error' && <Button accent="pink" onClick={() => void camera.start()}>START CAMERA</Button>}{camera.status === 'denied' && <Button accent="pink" onClick={() => void camera.start()}>TRY AGAIN</Button>}</div>}
           {overlay && isActive && <div className="camera-meme"><span>!!!</span><strong>SHOCKED</strong><small>MOCK UI</small></div>}
         </div>
         <div className="camera-controls">
           <Button onClick={() => isActive ? camera.stop() : void camera.start()} accent="white">{isActive ? <Pause size={16}/> : <Play size={16}/>} {isActive ? 'STOP' : 'START'}</Button>
+          <Button accent={goatBot ? 'yellow' : 'white'} onClick={() => setGoatBot((value) => !value)}><Cpu size={16}/> GOAT BOT {goatBot ? 'ON' : 'OFF'}</Button>
           <Button accent="white" disabled><Camera size={16}/> SNAPSHOT</Button>
           <Button accent="white" disabled><Video size={16}/> RECORD</Button>
           <Button accent="white" disabled><RotateCcw size={16}/> FLIP</Button>
@@ -83,7 +186,7 @@ function CameraPage() {
         <div className="detect-row"><span>LEFT / RIGHT</span><b>{hands.leftHandDetected ? "L" : "-"} / {hands.rightHandDetected ? "R" : "-"}</b></div>
         {(face.error || hands.error) && <div className="match-box"><span>VISION MESSAGE</span><h2>CHECK MEDIAPIPE</h2><p>{face.error ?? hands.error}</p></div>}
         {camera.devices.length > 0 && <div className="trigger"><div className="trigger-title"><span>CAMERA DEVICE</span></div>{camera.devices.map((device) => <label className="toggle" key={device.deviceId}><span>{device.label}</span><input type="radio" name="camera-device" checked={device.deviceId === camera.selectedDeviceId} onChange={() => void camera.selectDevice(device.deviceId)}/><i/></label>)}</div>}
-        <div className="trigger"><div className="trigger-title"><span>PHASE 5</span></div><p>MediaPipe is detecting face and hand landmarks. Gesture recognition, expressions, triggers and overlays remain disabled.</p><small>FACE + HAND LANDMARKS → LOCAL PROCESSING</small></div>
+        <div className="trigger"><div className="trigger-title"><span>GOAT BOT</span><b>{goatBot ? 'VISUALIZER ON' : 'VISUALIZER OFF'}</b></div><p>Show the live face + hand landmarks as a thin local debug mesh.</p><small>DOTS + STRINGS → CAMERA ONLY</small></div><div className="trigger"><div className="trigger-title"><span>PHASE 5</span></div><p>MediaPipe is detecting face and hand landmarks. Gesture recognition, expressions, triggers and overlays remain disabled.</p><small>FACE + HAND LANDMARKS → LOCAL PROCESSING</small></div>
         <label className="toggle"><span>SHOW MOCK MEME</span><input type="checkbox" checked={overlay} onChange={(event) => setOverlay(event.target.checked)}/><i/></label>
       </aside>
     </div>
