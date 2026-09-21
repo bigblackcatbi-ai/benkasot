@@ -26,6 +26,44 @@ export interface MemeTriggerDebug {
 const distance = (a: NormalizedLandmark, b: NormalizedLandmark) =>
   Math.hypot(a.x - b.x, a.y - b.y, (a.z ?? 0) - (b.z ?? 0))
 
+function clamp01(value: number): number {
+  return Math.max(0, Math.min(1, value))
+}
+
+function indexExtensionConfidence(hand: NormalizedLandmark[]): number {
+  const wrist = hand[0]
+  const mcp = hand[5]
+  const pip = hand[6]
+  const dip = hand[7]
+  const tip = hand[8]
+  if (!wrist || !mcp || !pip || !dip || !tip) return 0
+
+  const wristToTip = distance(wrist, tip)
+  const wristToPip = distance(wrist, pip)
+  const pipToTip = distance(pip, tip)
+  const mcpToPip = distance(mcp, pip)
+  if (wristToTip < wristToPip + 0.025) return 0
+
+  const extension = clamp01((wristToTip - wristToPip) / 0.10)
+  const straightness = clamp01(pipToTip / Math.max(mcpToPip, 0.001) / 1.15)
+  return Math.sqrt(extension * straightness)
+}
+
+function strictProximity(distanceValue: number, limit: number): number {
+  if (distanceValue >= limit) return 0
+  return clamp01((limit - distanceValue) / (limit * 0.45))
+}
+
+function closestFacePoint(
+  face: NormalizedLandmark[],
+  indices: number[],
+): NormalizedLandmark | undefined {
+  return indices
+    .map(index => face[index])
+    .filter((point): point is NormalizedLandmark => Boolean(point))
+    .reduce<NormalizedLandmark | undefined>((closest, point) => closest ?? point, undefined)
+}
+
 function conditionConfidence(
   condition: MemeCondition,
   analysis: VisionAnalysisState,
@@ -76,16 +114,27 @@ function conditionConfidence(
   if (condition.feature === 'hands') {
     if (!hands.length) return 0
     const faceCenter = face?.[1]
-    if (!faceCenter) return 0
-    const nearHeadScores = hands.map(hand => {
+    const forehead = face?.[10]
+    if (!faceCenter || !forehead) return 0
+
+    // "Hand on head" is intentionally strict: the palm must be near the
+    // forehead/temple region and the wrist must be above the face center.
+    // A hand merely passing in front of the face must not satisfy it.
+    const headScores = hands.map(hand => {
       const wrist = hand[0]
-      if (!wrist) return 0
-      const d = Math.hypot(wrist.x - faceCenter.x, wrist.y - faceCenter.y)
-      return Math.max(0, Math.min(1, (0.42 - d) / 0.22))
+      const palm = hand[9] ?? hand[5]
+      if (!wrist || !palm) return 0
+      if (wrist.y > faceCenter.y + 0.03) return 0
+
+      const palmToForehead = Math.hypot(palm.x - forehead.x, palm.y - forehead.y)
+      const verticalPosition = clamp01((faceCenter.y + 0.03 - wrist.y) / 0.18)
+      return strictProximity(palmToForehead, 0.26) * verticalPosition
     })
-    const nearHead = nearHeadScores.filter(score => score > 0.15).length
-    if (value === 'hands-on-head' || value === 'both-hands-near-head') return hands.length >= 2 && nearHead >= 2 ? Math.min(...nearHeadScores.filter(score => score > 0.15)) : 0
-    if (value === 'hand-on-head') return Math.max(...nearHeadScores, 0)
+    const nearHead = headScores.filter(score => score >= 0.45).length
+    if (value === 'hands-on-head' || value === 'both-hands-near-head') {
+      return hands.length >= 2 && nearHead >= 2 ? Math.min(...headScores.filter(score => score >= 0.45)) : 0
+    }
+    if (value === 'hand-on-head') return Math.max(...headScores, 0)
     if (value === 'both-hands-near-left-chest') {
       const scores = hands.map(hand => hand[0] && hand[0].x < faceCenter.x - 0.08 ? 0.75 : 0)
       return hands.length >= 2 && scores.filter(Boolean).length >= 2 ? Math.min(...scores.filter(Boolean)) : 0
@@ -116,13 +165,37 @@ function conditionConfidence(
     const faceCenter = face?.[1]
     if (!faceCenter) return 0
     const handConfidence = analysis.visionConfidence.hands
-    const proximity = (d: number, limit: number) => Math.max(0, Math.min(1, (limit - d) / (limit * 0.65)))
+
     if (value === 'index-finger-near-mouth') {
-      const scores = hands.map((hand, i) => hand[8] && face?.[13] ? proximity(distance(hand[8], face[13]), 0.16) * (handConfidence[i] ?? 0) : 0)
+      const upperLip = face?.[13]
+      const lowerLip = face?.[14]
+      if (!upperLip || !lowerLip) return 0
+      const lipCenter = {
+        x: (upperLip.x + lowerLip.x) / 2,
+        y: (upperLip.y + lowerLip.y) / 2,
+        z: ((upperLip.z ?? 0) + (lowerLip.z ?? 0)) / 2,
+      }
+      const scores = hands.map((hand, i) => {
+        const fingertip = hand[8]
+        if (!fingertip) return 0
+        const extension = indexExtensionConfidence(hand)
+        const mouthDistance = distance(fingertip, lipCenter)
+        // Very small target zone: nose/cheek/near-face positions do not count.
+        return strictProximity(mouthDistance, 0.105) * extension * (handConfidence[i] ?? 0)
+      })
       return Math.max(...scores, 0)
     }
+
     if (value === 'index-finger-near-head') {
-      const scores = hands.map((hand, i) => hand[8] ? proximity(Math.hypot(hand[8].x - faceCenter.x, hand[8].y - faceCenter.y), 0.22) * (handConfidence[i] ?? 0) : 0)
+      const headTarget = closestFacePoint(face ?? [], [10, 54, 284])
+      if (!headTarget) return 0
+      const scores = hands.map((hand, i) => {
+        const fingertip = hand[8]
+        if (!fingertip) return 0
+        const extension = indexExtensionConfidence(hand)
+        const headDistance = distance(fingertip, headTarget)
+        return strictProximity(headDistance, 0.12) * extension * (handConfidence[i] ?? 0)
+      })
       return Math.max(...scores, 0)
     }
     if (value === 'index-finger-to-chest') {
@@ -154,11 +227,14 @@ const CONDITION_WEIGHTS: Record<MemeCondition['feature'], number> = {
   movement: 0.5,
 }
 
-const TRIGGER_THRESHOLD = 55
-const LOCK_MS = 1100
-const EXIT_SCORE = 38
-const FAST_TRIGGER_SCORE = 88
-const NORMAL_TRIGGER_SCORE = 65
+const TRIGGER_THRESHOLD = 82
+const STRICT_CONFIDENCE_GATE = 0.68
+const EXIT_SCORE = 52
+const RELEASE_SCORE = 58
+const RELEASE_SAMPLE_LIMIT = 2
+const SWITCH_CONFIRM_SAMPLES = 3
+const TAKEOVER_MARGIN = 12
+const SWITCH_COOLDOWN_MS = 450
 const MISS_LIMIT = 3
 
 function matchMeme(
@@ -212,11 +288,23 @@ function matchMeme(
     condition => condition.required && !conditionMatches(condition, analysis, face, hands),
   ).length
 
-  const relaxedThreshold = requiredMisses > 0 ? TRIGGER_THRESHOLD : groupResults.length > 1 ? 62 : 45
-  const confidenceGate = groupResults.length > 1 ? 0.5 : 0.42
   const strongestConfidence = Math.max(...groupResults.map(group => group.groupScore), 0)
-  const triggered = hasPrimarySignal && weakestSignal >= confidenceGate && strongestConfidence >= confidenceGate &&
-    (groupResults.length === 1 ? score >= relaxedThreshold : allFeatureGroupsMatch && score >= relaxedThreshold)
+  const confidenceGate = groupResults.length > 1 ? STRICT_CONFIDENCE_GATE : 0.62
+
+  // Strict mode: every enabled feature group must be genuinely present.
+  // Required conditions still act as an explicit extra guard, but optional
+  // enabled conditions are no longer allowed to be silently ignored.
+  const allEnabledConditionsMatch = conditions.every(condition =>
+    conditionMatches(condition, analysis, face, hands),
+  )
+
+  const triggered = hasPrimarySignal &&
+    weakestSignal >= confidenceGate &&
+    strongestConfidence >= confidenceGate &&
+    allFeatureGroupsMatch &&
+    allEnabledConditionsMatch &&
+    requiredMisses === 0 &&
+    score >= TRIGGER_THRESHOLD
 
   return {
     meme,
@@ -246,8 +334,9 @@ export function useMemeTriggerEngine(
   const candidateCountRef = useRef(0)
   const stableIdRef = useRef<string | null>(null)
   const stableScoreRef = useRef(0)
-  const stableUntilRef = useRef(0)
+  const stableBelowReleaseCountRef = useRef(0)
   const missCountRef = useRef(0)
+  const lastSwitchAtRef = useRef(0)
 
   useEffect(() => {
     if (!enabled) {
@@ -256,7 +345,6 @@ export function useMemeTriggerEngine(
       candidateCountRef.current = 0
       stableIdRef.current = null
       stableScoreRef.current = 0
-      stableUntilRef.current = 0
       missCountRef.current = 0
       return
     }
@@ -272,9 +360,10 @@ export function useMemeTriggerEngine(
 
       const candidate = freshMatches[0] ?? null
       const now = performance.now()
-      const confirmationNeeded = candidate
-        ? candidate.score >= FAST_TRIGGER_SCORE ? 1 : candidate.score >= NORMAL_TRIGGER_SCORE ? 2 : 3
-        : 0
+      const currentMatch = stableIdRef.current
+        ? freshMatches.find(match => match.meme.id === stableIdRef.current) ?? null
+        : null
+      const confirmationNeeded = candidate ? SWITCH_CONFIRM_SAMPLES : 0
 
       setDebug({
         candidateId: candidate?.meme.id ?? null,
@@ -283,12 +372,16 @@ export function useMemeTriggerEngine(
         confirmationNeeded,
         stableId: stableIdRef.current,
         stableScore: stableScoreRef.current,
-        lockRemainingMs: Math.max(0, stableUntilRef.current - now),
+        lockRemainingMs: 0,
       })
 
-      // Meme-level hysteresis: once an overlay is active, small confidence
-      // dips do not make it blink off. A new meme also needs confirmation
-      // unless its signal is exceptionally strong.
+      // Winner arbitration:
+      // 1. A meme must satisfy ALL enabled conditions.
+      // 2. Once a meme wins, another meme cannot steal it just because it
+      //    scores a little higher.
+      // 3. The current meme must actually release before a normal switch.
+      // 4. A replacement needs several consecutive frames of confirmation.
+      // This prevents overlapping expressions/gestures from fighting.
       if (!candidate) {
         missCountRef.current += 1
         if (stableIdRef.current && missCountRef.current < MISS_LIMIT) {
@@ -302,7 +395,6 @@ export function useMemeTriggerEngine(
         setMatches([])
         stableIdRef.current = null
         stableScoreRef.current = 0
-        stableUntilRef.current = 0
         candidateIdRef.current = null
         candidateCountRef.current = 0
         missCountRef.current = 0
@@ -315,11 +407,46 @@ export function useMemeTriggerEngine(
         candidateIdRef.current = candidate.meme.id
         candidateCountRef.current += 1
         stableScoreRef.current = candidate.score
-        stableUntilRef.current = now + LOCK_MS
-        setMatches(freshMatches)
+        stableBelowReleaseCountRef.current = candidate.score < RELEASE_SCORE
+          ? stableBelowReleaseCountRef.current + 1
+          : 0
+
+        setMatches([candidate])
         return
       }
 
+      // No current winner: require a clean confirmation before the first fire.
+      if (!stableIdRef.current) {
+        if (candidateIdRef.current !== candidate.meme.id) {
+          candidateIdRef.current = candidate.meme.id
+          candidateCountRef.current = 1
+        } else {
+          candidateCountRef.current += 1
+        }
+
+        if (candidateCountRef.current >= SWITCH_CONFIRM_SAMPLES) {
+          stableIdRef.current = candidate.meme.id
+          stableScoreRef.current = candidate.score
+          stableBelowReleaseCountRef.current = 0
+          lastSwitchAtRef.current = now
+          setMatches([candidate])
+        } else {
+          setMatches([])
+        }
+        return
+      }
+
+      const currentScore = currentMatch?.score ?? 0
+      const currentReleased = !currentMatch || currentScore < RELEASE_SCORE
+      if (currentReleased) {
+        stableBelowReleaseCountRef.current += 1
+      } else {
+        stableBelowReleaseCountRef.current = 0
+      }
+
+      // A competing meme needs both temporal confirmation and a meaningful
+      // score advantage. This is the "stopper": the old meme owns the overlay
+      // until it releases, rather than letting every partial overlap replace it.
       if (candidateIdRef.current !== candidate.meme.id) {
         candidateIdRef.current = candidate.meme.id
         candidateCountRef.current = 1
@@ -327,19 +454,27 @@ export function useMemeTriggerEngine(
         candidateCountRef.current += 1
       }
 
-      const needed = candidate.score >= FAST_TRIGGER_SCORE ? 1 : candidate.score >= NORMAL_TRIGGER_SCORE ? 2 : 3
-      const confirmed = candidateCountRef.current >= needed
+      const confirmed = candidateCountRef.current >= SWITCH_CONFIRM_SAMPLES
+      const takeoverMarginMet = candidate.score >= currentScore + TAKEOVER_MARGIN
+      const cooldownOver = now - lastSwitchAtRef.current >= SWITCH_COOLDOWN_MS
+      const mayTakeOver = confirmed && cooldownOver &&
+        (stableBelowReleaseCountRef.current >= RELEASE_SAMPLE_LIMIT || takeoverMarginMet)
 
-      if (!stableIdRef.current || confirmed) {
+      if (mayTakeOver) {
         stableIdRef.current = candidate.meme.id
         stableScoreRef.current = candidate.score
-        stableUntilRef.current = now + LOCK_MS
-        setMatches(freshMatches)
+        stableBelowReleaseCountRef.current = 0
+        lastSwitchAtRef.current = now
+        setMatches([candidate])
       } else {
-        // Keep the previous overlay while a competing meme proves itself.
         const held = getAllMemes().find(meme => meme.id === stableIdRef.current)
         if (held) {
-          setMatches([{ meme: held, score: stableScoreRef.current, matched: 0, total: held.trigger.conditions.length }])
+          setMatches([{
+            meme: held,
+            score: Math.max(EXIT_SCORE, stableScoreRef.current),
+            matched: 0,
+            total: held.trigger.conditions.length,
+          }])
         }
       }
     }
