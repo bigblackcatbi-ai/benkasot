@@ -270,7 +270,7 @@ function CameraPage() {
   const isRequesting = camera.status === 'requesting'
   const face = useFaceLandmarker(camera.videoRef, isActive)
   const hands = useHandLandmarker(camera.videoRef, isActive)
-  const analysis = useExpressionGestureDetection(face.landmarksRef, hands.landmarksRef, hands.handednessRef, isActive)
+  const analysis = useExpressionGestureDetection(face.landmarksRef, hands.landmarksRef, hands.handednessRef, face.blendshapesRef, isActive)
   const memeEngine = useMemeTriggerEngine(analysis, face.landmarksRef, hands.landmarksRef, isActive)
   const activeMeme = memeEngine.topMatch?.meme ?? null
 
