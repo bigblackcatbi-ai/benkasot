@@ -249,6 +249,10 @@ export function addCustomMeme(meme: Meme): void {
   customMemes = [...customMemes.filter((item) => item.id !== meme.id), meme]
 }
 
+export function deleteCustomMeme(id: string): void {
+  customMemes = customMemes.filter((item) => item.id !== id)
+}
+
 export function getMemeById(id: string): Meme | undefined {
-  return memes.find((meme) => meme.id === id)
+  return getAllMemes().find((meme) => meme.id === id)
 }
