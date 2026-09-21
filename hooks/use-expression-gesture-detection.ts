@@ -127,12 +127,23 @@ function analyzeFace(face: NormalizedLandmark[] | undefined, baseline: VisionBas
   const browLeft = face[105].y - face[159].y
   const browRight = face[334].y - face[386].y
   const browDown = browLeft > -0.055 && browRight > -0.055
-  const angry = browDown && eyes === 'CLOSED' && mouth !== 'SMILE'
+  const browConfidence = clamp01(
+    (thresholdConfidence(browLeft, -0.055, 0.045) +
+      thresholdConfidence(browRight, -0.055, 0.045)) / 2,
+  )
+  // Anger is not the same as closed eyes. Use brow compression plus
+  // narrowed/non-smiling eyes so a normal blink does not become ANGRY.
+  const narrowedEyes = eyes !== 'OPEN'
+  const angry = browDown && narrowedEyes && mouth !== 'SMILE'
+  const angryConfidence = clamp01((browConfidence + eyeConfidence + (mouth === 'SMILE' ? 0 : 0.55)) / 3)
   const happy = mouth === 'SMILE'
   const sad = mouth === 'FROWN'
   const surprised = eyes === 'OPEN' && mouth === 'OPEN'
   const asymmetry = Math.abs((face[61].y - face[291].y) / Math.max(mouthWidth, 0.001))
-  const smirkConfidence = thresholdConfidence(asymmetry, 0.14, 0.12)
+  const smirkConfidence = clamp01(
+    thresholdConfidence(asymmetry, 0.14, 0.10) *
+    (1 - Math.max(smileConfidence, frownConfidence) * 0.65),
+  )
   const surprisedConfidence = clamp01((eyeConfidence + mouthOpenConfidence) / 2)
   const expressionCandidates = [
     { value: 'SURPRISED' as FaceExpression, confidence: surprisedConfidence },
@@ -150,7 +161,7 @@ function analyzeFace(face: NormalizedLandmark[] | undefined, baseline: VisionBas
     sad ? 'SAD' :
     asymmetry > 0.14 ? 'SMIRK' : 'NEUTRAL'
   const expressionConfidence = faceExpression === 'SURPRISED' ? surprisedConfidence :
-    faceExpression === 'ANGRY' ? clamp01((eyeConfidence + 0.45) / 2) :
+    faceExpression === 'ANGRY' ? angryConfidence :
     faceExpression === 'NEUTRAL' ? clamp01(1 - bestExpression.confidence) :
     bestExpression.confidence
   const yawConfidence = clamp01(Math.max(
