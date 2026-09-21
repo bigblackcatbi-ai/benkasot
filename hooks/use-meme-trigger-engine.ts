@@ -290,7 +290,12 @@ function matchMeme(
   ).length
 
   const strongestConfidence = Math.max(...groupResults.map(group => group.groupScore), 0)
-  const confidenceGate = groupResults.length > 1 ? STRICT_CONFIDENCE_GATE : 0.62
+  const singleExpressionEmotion = conditions.length === 1 && conditions[0]?.feature === 'expression'
+    && ['happy', 'sad', 'angry', 'crying', 'excited', 'neutral'].includes(conditions[0]?.value)
+  const confidenceGate = groupResults.length > 1
+    ? STRICT_CONFIDENCE_GATE
+    : singleExpressionEmotion ? 0.50 : 0.62
+  const triggerThreshold = singleExpressionEmotion ? 50 : TRIGGER_THRESHOLD
 
   // Strict mode: every enabled feature group must be genuinely present.
   // Required conditions still act as an explicit extra guard, but optional
@@ -305,7 +310,7 @@ function matchMeme(
     allFeatureGroupsMatch &&
     allEnabledConditionsMatch &&
     requiredMisses === 0 &&
-    score >= TRIGGER_THRESHOLD
+    score >= triggerThreshold
 
   return {
     meme,
