@@ -124,6 +124,9 @@ function analyzeFace(face: NormalizedLandmark[] | undefined, baseline: VisionBas
     else if (yawOffset > 0.14) headDirection = 'RIGHT'
   }
 
+  // Keep expression recognition intentionally simple. We are not trying to
+  // classify every subtle facial movement from hundreds of landmarks.
+  // Strong, easy-to-understand signals win in a fixed order.
   const browLeft = face[105].y - face[159].y
   const browRight = face[334].y - face[386].y
   const browDown = browLeft > -0.055 && browRight > -0.055
@@ -131,39 +134,47 @@ function analyzeFace(face: NormalizedLandmark[] | undefined, baseline: VisionBas
     (thresholdConfidence(browLeft, -0.055, 0.045) +
       thresholdConfidence(browRight, -0.055, 0.045)) / 2,
   )
-  // Anger is not the same as closed eyes. Use brow compression plus
-  // narrowed/non-smiling eyes so a normal blink does not become ANGRY.
-  const narrowedEyes = eyes !== 'OPEN'
-  const angry = browDown && narrowedEyes && mouth !== 'SMILE'
-  const angryConfidence = clamp01((browConfidence + eyeConfidence + (mouth === 'SMILE' ? 0 : 0.55)) / 3)
-  const happy = mouth === 'SMILE'
-  const sad = mouth === 'FROWN'
-  const surprised = eyes === 'OPEN' && mouth === 'OPEN'
+
+  const happy = smileConfidence >= 0.48
+  const sad = frownConfidence >= 0.48
+
+  // Anger needs a combination that is different from sadness. In particular,
+  // a frown is allowed to be SAD without also becoming ANGRY.
+  const angry = browDown && !happy && !sad && eyes === 'OPEN' && browConfidence >= 0.62
+  const angryConfidence = angry
+    ? clamp01((browConfidence + eyeConfidence) / 2)
+    : 0
+
+  const surprised = eyes === 'OPEN' && mouth === 'OPEN' &&
+    eyeConfidence >= 0.5 && mouthOpenConfidence >= 0.5
+  const surprisedConfidence = surprised
+    ? clamp01((eyeConfidence + mouthOpenConfidence) / 2)
+    : 0
+
   const asymmetry = Math.abs((face[61].y - face[291].y) / Math.max(mouthWidth, 0.001))
-  const smirkConfidence = clamp01(
-    thresholdConfidence(asymmetry, 0.14, 0.10) *
-    (1 - Math.max(smileConfidence, frownConfidence) * 0.65),
-  )
-  const surprisedConfidence = clamp01((eyeConfidence + mouthOpenConfidence) / 2)
-  const expressionCandidates = [
-    { value: 'SURPRISED' as FaceExpression, confidence: surprisedConfidence },
-    { value: 'HAPPY' as FaceExpression, confidence: smileConfidence },
-    { value: 'SAD' as FaceExpression, confidence: frownConfidence },
-    { value: 'SMIRK' as FaceExpression, confidence: smirkConfidence },
-  ]
-  const bestExpression = expressionCandidates.reduce((best, current) =>
-    current.confidence > best.confidence ? current : best,
-  )
+  const smirkConfidence = !happy && !sad && !surprised
+    ? clamp01(thresholdConfidence(asymmetry, 0.16, 0.10))
+    : 0
+
+  // Priority is deliberate:
+  // SURPRISED > HAPPY > SAD > ANGRY > SMIRK > NEUTRAL.
+  // This makes obvious expressions stable and prevents one weak signal
+  // from stealing the label from a stronger expression.
   const faceExpression: FaceExpression =
     surprised ? 'SURPRISED' :
-    angry ? 'ANGRY' :
     happy ? 'HAPPY' :
     sad ? 'SAD' :
-    asymmetry > 0.14 ? 'SMIRK' : 'NEUTRAL'
-  const expressionConfidence = faceExpression === 'SURPRISED' ? surprisedConfidence :
+    angry ? 'ANGRY' :
+    smirkConfidence >= 0.65 ? 'SMIRK' :
+    'NEUTRAL'
+
+  const expressionConfidence =
+    faceExpression === 'SURPRISED' ? surprisedConfidence :
+    faceExpression === 'HAPPY' ? smileConfidence :
+    faceExpression === 'SAD' ? frownConfidence :
     faceExpression === 'ANGRY' ? angryConfidence :
-    faceExpression === 'NEUTRAL' ? clamp01(1 - bestExpression.confidence) :
-    bestExpression.confidence
+    faceExpression === 'SMIRK' ? smirkConfidence :
+    0.85
   const yawConfidence = clamp01(Math.max(
     thresholdConfidence(yawPosition, 0.41, 0.12),
     thresholdConfidence(yawPosition, 0.59, 0.12),
@@ -319,24 +330,21 @@ function smoothFaceState(raw: FaceAnalysis, previous: FaceAnalysis | null, pendi
     return pending[countKey] >= 2 ? value : previousValue
   }
 
-  // Hysteresis: entering a new expression needs stronger evidence than
-  // maintaining the current one. This stops tiny landmark changes from
-  // repeatedly flipping HAPPY/NEUTRAL/SAD while still allowing real changes.
+  // Only stabilize an actual classified expression. Do not let a weak
+  // intermediate label (especially NEUTRAL/SMIRK) block a clear SAD/HAPPY
+  // expression from taking over.
   const expressionChanged = raw.faceExpression !== base.faceExpression
-  const expressionEnterThreshold = 0.62
-  const expressionKeepThreshold = 0.38
   const expressionConfidence = raw.visionConfidence.expression
-  const allowExpressionChange = expressionChanged
-    ? expressionConfidence >= expressionEnterThreshold ||
-      (expressionConfidence >= expressionKeepThreshold && pending.expressionCount >= 2)
-    : true
-  const stableExpression = allowExpressionChange
+  const strongExpression = raw.faceExpression === 'NEUTRAL'
+    ? true
+    : expressionConfidence >= 0.48
+  const stableExpression = expressionChanged && strongExpression
     ? settle(raw.faceExpression, 'expression', 'expressionCount', base.faceExpression)
     : base.faceExpression
 
-  if (!allowExpressionChange) {
+  if (!expressionChanged) {
     pending.expression = raw.faceExpression
-    pending.expressionCount = 1
+    pending.expressionCount = Math.max(pending.expressionCount, 1)
   }
 
   return {
