@@ -27,6 +27,7 @@ export interface VisionBaseline {
   eyeOpen: number
   mouthOpen: number
   smileOffset: number
+  blendshapes: Record<string, number>
 }
 
 export interface VisionAnalysisState {
@@ -60,12 +61,18 @@ type Blendshape = { categoryName: string; score: number }
 const blendshapeScore = (
   blendshapes: Blendshape[] | undefined,
   name: string,
-) => blendshapes?.find(shape => shape.categoryName === name)?.score ?? 0
+  baseline?: Record<string, number>,
+) => Math.max(
+  0,
+  (blendshapes?.find(shape => shape.categoryName === name)?.score ?? 0) -
+    (baseline?.[name] ?? 0),
+)
 
 const averageBlendshape = (
   blendshapes: Blendshape[] | undefined,
   names: string[],
-) => names.reduce((sum, name) => sum + blendshapeScore(blendshapes, name), 0) / names.length
+  baseline?: Record<string, number>,
+) => names.reduce((sum, name) => sum + blendshapeScore(blendshapes, name, baseline), 0) / names.length
 
 const clamp01 = (value: number) => Math.max(0, Math.min(1, value))
 const thresholdConfidence = (value: number, threshold: number, scale: number) =>
@@ -143,38 +150,46 @@ function analyzeFace(
   // Face expression recognition uses MediaPipe's trained blendshapes.
   // Landmarks remain available for spatial tasks, but they no longer decide
   // whether a face is SAD/HAPPY/ANGRY/SMIRK.
-  const smile = averageBlendshape(blendshapes, ['mouthSmileLeft', 'mouthSmileRight'])
-  const frown = averageBlendshape(blendshapes, ['mouthFrownLeft', 'mouthFrownRight'])
-  const browDown = averageBlendshape(blendshapes, ['browDownLeft', 'browDownRight'])
-  const browUp = averageBlendshape(blendshapes, ['browInnerUp'])
-  const jawOpen = blendshapeScore(blendshapes, 'jawOpen')
-  const eyeWide = averageBlendshape(blendshapes, ['eyeWideLeft', 'eyeWideRight'])
-  const eyeSquint = averageBlendshape(blendshapes, ['eyeSquintLeft', 'eyeSquintRight'])
+  const neutralBlendshapes = baseline?.blendshapes
+  const smile = averageBlendshape(blendshapes, ['mouthSmileLeft', 'mouthSmileRight'], neutralBlendshapes)
+  const frown = averageBlendshape(blendshapes, ['mouthFrownLeft', 'mouthFrownRight'], neutralBlendshapes)
+  const browDown = averageBlendshape(blendshapes, ['browDownLeft', 'browDownRight'], neutralBlendshapes)
+  const browUp = averageBlendshape(blendshapes, ['browInnerUp'], neutralBlendshapes)
+  const jawOpen = blendshapeScore(blendshapes, 'jawOpen', neutralBlendshapes)
+  const eyeWide = averageBlendshape(blendshapes, ['eyeWideLeft', 'eyeWideRight'], neutralBlendshapes)
+  const eyeSquint = averageBlendshape(blendshapes, ['eyeSquintLeft', 'eyeSquintRight'], neutralBlendshapes)
 
-  const happyConfidence = clamp01(smile)
-  const sadConfidence = clamp01(frown * 0.9 + browUp * 0.1)
+  // These are action-unit signals, not emotion labels. We combine them only
+  // after subtracting the user's neutral face, which prevents a naturally
+  // upturned mouth or strong brow shape from becoming "HAPPY" or "ANGRY".
+  const happyConfidence = clamp01(smile * 1.15)
+  const sadConfidence = clamp01(frown * 0.90 + browUp * 0.10)
   const surprisedConfidence = clamp01(
-    (jawOpen * 0.45) + (eyeWide * 0.40) + (browUp * 0.15),
+    jawOpen * 0.45 + eyeWide * 0.40 + browUp * 0.15,
   )
   const angryConfidence = clamp01(
-    (browDown * 0.65) + (eyeSquint * 0.25) + (frown * 0.10),
+    browDown * 0.72 + eyeSquint * 0.28,
   )
 
-  // Smirk requires clear left/right smile imbalance and is deliberately
-  // lower priority than a genuine happy/sad/surprised/angry signal.
-  const smileLeft = blendshapeScore(blendshapes, 'mouthSmileLeft')
-  const smileRight = blendshapeScore(blendshapes, 'mouthSmileRight')
-  const smirkConfidence = !happyConfidence && !sadConfidence
-    ? clamp01(Math.abs(smileLeft - smileRight) * 2.2)
-    : 0
+  const smileLeft = blendshapeScore(blendshapes, 'mouthSmileLeft', neutralBlendshapes)
+  const smileRight = blendshapeScore(blendshapes, 'mouthSmileRight', neutralBlendshapes)
+  const smirkConfidence = clamp01(Math.abs(smileLeft - smileRight) * 2.2)
 
-  const faceExpression: FaceExpression =
-    surprisedConfidence >= 0.62 ? 'SURPRISED' :
-    happyConfidence >= 0.52 ? 'HAPPY' :
-    sadConfidence >= 0.48 && sadConfidence >= angryConfidence ? 'SAD' :
-    angryConfidence >= 0.58 ? 'ANGRY' :
-    smirkConfidence >= 0.55 ? 'SMIRK' :
-    'NEUTRAL'
+  const candidates = [
+    { expression: 'SURPRISED' as FaceExpression, score: surprisedConfidence, threshold: 0.58 },
+    { expression: 'HAPPY' as FaceExpression, score: happyConfidence, threshold: 0.62 },
+    { expression: 'SAD' as FaceExpression, score: sadConfidence, threshold: 0.55 },
+    { expression: 'ANGRY' as FaceExpression, score: angryConfidence, threshold: 0.52 },
+    { expression: 'SMIRK' as FaceExpression, score: smirkConfidence, threshold: 0.58 },
+  ].sort((a, b) => b.score - a.score)
+
+  const strongest = candidates[0]
+  const runnerUp = candidates[1]
+  const hasClearWinner = strongest.score >= strongest.threshold &&
+    (!runnerUp || strongest.score - runnerUp.score >= 0.10)
+
+  const faceExpression = hasClearWinner ? strongest.expression : 'NEUTRAL' as FaceExpression
+  const expressionConfidence = hasClearWinner ? strongest.score : 0.85
 
   const expressionConfidence =
     faceExpression === 'SURPRISED' ? surprisedConfidence :
