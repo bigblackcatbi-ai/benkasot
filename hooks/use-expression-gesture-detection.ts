@@ -254,13 +254,36 @@ function smoothFaceState(raw: FaceAnalysis, previous: FaceAnalysis | null, pendi
     return pending[countKey] >= 2 ? value : previousValue
   }
 
+  // Hysteresis: entering a new expression needs stronger evidence than
+  // maintaining the current one. This stops tiny landmark changes from
+  // repeatedly flipping HAPPY/NEUTRAL/SAD while still allowing real changes.
+  const expressionChanged = raw.faceExpression !== base.faceExpression
+  const expressionEnterThreshold = 0.62
+  const expressionKeepThreshold = 0.38
+  const expressionConfidence = raw.visionConfidence.expression
+  const allowExpressionChange = expressionChanged
+    ? expressionConfidence >= expressionEnterThreshold ||
+      (expressionConfidence >= expressionKeepThreshold && pending.expressionCount >= 2)
+    : true
+  const stableExpression = allowExpressionChange
+    ? settle(raw.faceExpression, 'expression', 'expressionCount', base.faceExpression)
+    : base.faceExpression
+
+  if (!allowExpressionChange) {
+    pending.expression = raw.faceExpression
+    pending.expressionCount = 1
+  }
+
   return {
     facePresent: true,
-    faceExpression: settle(raw.faceExpression, 'expression', 'expressionCount', base.faceExpression),
+    faceExpression: stableExpression,
     eyes: settle(raw.eyes, 'eyes', 'eyesCount', base.eyes),
     mouth: settle(raw.mouth, 'mouth', 'mouthCount', base.mouth),
     headDirection: settle(raw.headDirection, 'head', 'headCount', base.headDirection),
-    visionConfidence: raw.visionConfidence,
+    visionConfidence: {
+      ...raw.visionConfidence,
+      expression: Math.max(expressionConfidence, expressionChanged ? expressionKeepThreshold : 0),
+    },
   }
 }
 
