@@ -83,14 +83,62 @@ function conditionMatches(
   return false
 }
 
+const CONDITION_WEIGHTS: Record<MemeCondition['feature'], number> = {
+  eyes: 1,
+  mouth: 1,
+  expression: 1.15,
+  gaze: 0.9,
+  hands: 1.25,
+  finger: 1.25,
+  movement: 0.5,
+}
+
+const TRIGGER_THRESHOLD = 55
+
 function matchMeme(meme: Meme, analysis: VisionAnalysisState, face: NormalizedLandmark[] | undefined, hands: NormalizedLandmark[][]): MemeMatch {
   const conditions = meme.trigger.conditions.filter(condition => condition.enabled !== false)
-  const matched = conditions.filter(condition => conditionMatches(condition, analysis, face, hands)).length
-  const total = conditions.length
   const required = conditions.filter(condition => condition.required)
-  const requiredMatched = required.every(condition => conditionMatches(condition, analysis, face, hands))
-  const score = total ? Math.round((matched / total) * 100) : 0
-  return { meme, score: requiredMatched ? score : 0, matched, total }
+
+  if (!analysis.facePresent || !conditions.length) {
+    return { meme, score: 0, matched: 0, total: conditions.length }
+  }
+
+  const weightedTotal = conditions.reduce(
+    (sum, condition) => sum + (CONDITION_WEIGHTS[condition.feature] ?? 1),
+    0,
+  )
+  const weightedMatched = conditions.reduce((sum, condition) => {
+    if (!conditionMatches(condition, analysis, face, hands)) return sum
+    return sum + (CONDITION_WEIGHTS[condition.feature] ?? 1)
+  }, 0)
+
+  const matched = conditions.filter(condition => conditionMatches(condition, analysis, face, hands)).length
+  const score = weightedTotal
+    ? Math.round((weightedMatched / weightedTotal) * 100)
+    : 0
+
+  // "Required" conditions now act as a soft preference rather than a hard
+  // gate. A strong primary signal can trigger the meme even when a supporting
+  // condition is imperfect, which is much closer to how a human reacts.
+  const hasPrimarySignal = conditions.some(condition => {
+    const weight = CONDITION_WEIGHTS[condition.feature] ?? 1
+    return conditionMatches(condition, analysis, face, hands) && weight >= 1
+  })
+
+  // Keep an optional condition useful without making it a blocker.
+  const requiredMisses = required.filter(
+    condition => !conditionMatches(condition, analysis, face, hands),
+  ).length
+
+  const relaxedThreshold = requiredMisses > 0 ? TRIGGER_THRESHOLD : 45
+  const triggered = hasPrimarySignal && score >= relaxedThreshold
+
+  return {
+    meme,
+    score: triggered ? score : 0,
+    matched,
+    total: conditions.length,
+  }
 }
 
 export function useMemeTriggerEngine(
