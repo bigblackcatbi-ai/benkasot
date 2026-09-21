@@ -461,12 +461,16 @@ export function useExpressionGestureDetection(
       const faceState = smoothFaceState(rawFaceState, previousFaceRef.current, pendingFaceRef.current)
       previousFaceRef.current = faceState
 
-      const rawHandGestures = handLandmarks.current.map((hand, index) => ({
-        handedness: handedness.current[index] === 'Left' || handedness.current[index] === 'Right'
-          ? handedness.current[index] as 'Left' | 'Right'
-          : 'Hand',
-        gesture: analyzeHand(hand).gesture,
-      }))
+      const rawHandGestures = handLandmarks.current.map((hand, index) => {
+        const result = analyzeHand(hand)
+        return {
+          handedness: handedness.current[index] === 'Left' || handedness.current[index] === 'Right'
+            ? handedness.current[index] as 'Left' | 'Right'
+            : 'Hand',
+          gesture: result.gesture,
+          confidence: result.confidence,
+        }
+      })
       const handGestures = smoothHandGestures(rawHandGestures)
 
       setState({
@@ -474,10 +478,9 @@ export function useExpressionGestureDetection(
         handGestures,
         visionConfidence: {
           ...faceState.visionConfidence,
-          hands: rawHandGestures.map((hand, index) => {
-          const raw = analyzeHand(handLandmarks.current[index])
-          return hand.gesture === 'UNKNOWN' ? Math.min(0.35, raw.confidence) : raw.confidence
-        }),
+          hands: rawHandGestures.map(hand =>
+            hand.gesture === 'UNKNOWN' ? Math.min(0.35, hand.confidence) : hand.confidence,
+          ),
         },
         baseline: baselineRef.current,
       })
