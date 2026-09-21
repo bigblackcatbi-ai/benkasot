@@ -166,7 +166,7 @@ export function useMemeTriggerEngine(
     const update = () => {
       const face = faceLandmarks.current[0]
       const hands = handLandmarks.current
-      const freshMatches = memes
+      const freshMatches = getAllMemes()
         .filter(meme => meme.enabled)
         .map(meme => matchMeme(meme, analysis, face, hands))
         .filter(match => match.score > 0)
