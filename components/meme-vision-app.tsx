@@ -141,6 +141,94 @@ function LandmarkOverlay({ enabled, video, faceLandmarks, handLandmarks }: { ena
   return <canvas ref={canvasRef} className="landmark-overlay" aria-hidden="true" />
 }
 
+
+function MemeAROverlay({ meme, video, faceLandmarks }: { meme: Meme | null; video: HTMLVideoElement | null; faceLandmarks: React.MutableRefObject<import('@mediapipe/tasks-vision').NormalizedLandmark[][]> }) {
+  const [failedImage, setFailedImage] = useState<string | null>(null)
+  const [pose, setPose] = useState({ x: 50, y: 42, width: 28, angle: 0 })
+
+  useEffect(() => {
+    if (!meme || !video) return
+
+    let frame = 0
+    const update = () => {
+      const canvas = video.parentElement
+      const width = canvas?.clientWidth ?? 0
+      const height = canvas?.clientHeight ?? 0
+      const face = faceLandmarks.current[0]
+
+      if (width && height && face?.length) {
+        const xs = face.map(point => point.x)
+        const ys = face.map(point => point.y)
+        const minX = Math.min(...xs)
+        const maxX = Math.max(...xs)
+        const minY = Math.min(...ys)
+        const maxY = Math.max(...ys)
+        const centerX = (minX + maxX) / 2
+        const centerY = (minY + maxY) / 2
+        const faceWidth = Math.max(0.08, maxX - minX)
+        const leftEye = face[33]
+        const rightEye = face[263]
+        const angle = leftEye && rightEye ? Math.atan2(rightEye.y - leftEye.y, rightEye.x - leftEye.x) * 180 / Math.PI : 0
+
+        const videoWidth = video.videoWidth || width
+        const videoHeight = video.videoHeight || height
+        const scale = Math.max(width / videoWidth, height / videoHeight)
+        const renderedWidth = videoWidth * scale
+        const renderedHeight = videoHeight * scale
+        const offsetX = (width - renderedWidth) / 2
+        const offsetY = (height - renderedHeight) / 2
+
+        const screenX = offsetX + centerX * renderedWidth
+        const screenY = offsetY + centerY * renderedHeight
+        const screenFaceWidth = faceWidth * renderedWidth
+
+        setPose({
+          x: (screenX / width) * 100 + meme.overlay.offsetX,
+          y: (screenY / height) * 100 + meme.overlay.offsetY,
+          width: Math.max(12, Math.min(65, (screenFaceWidth / width) * 100 * 2.15 * meme.overlay.scale)),
+          angle: angle + meme.overlay.rotation,
+        })
+      }
+
+      frame = requestAnimationFrame(update)
+    }
+
+    frame = requestAnimationFrame(update)
+    return () => cancelAnimationFrame(frame)
+  }, [meme, video, faceLandmarks])
+
+  if (!meme || !video) return null
+
+  const imageBroken = failedImage === meme.id
+  return (
+    <div
+      className="meme-ar-overlay"
+      style={{
+        left: `${pose.x}%`,
+        top: `${pose.y}%`,
+        width: `${pose.width}%`,
+        opacity: meme.overlay.opacity,
+        transform: `translate(-50%, -50%) rotate(${pose.angle}deg)`,
+        animation: meme.overlay.animation === 'pop' ? 'meme-pop 260ms ease-out' : meme.overlay.animation === 'shake' ? 'meme-shake 360ms ease-in-out' : meme.overlay.animation === 'bounce' ? 'meme-bounce 500ms ease-in-out' : undefined,
+      }}
+    >
+      {imageBroken ? (
+        <div className="meme-ar-fallback">
+          <span>MEME//VISION</span>
+          <strong>{meme.shortLabel}</strong>
+        </div>
+      ) : (
+        <img src={meme.imagePath} alt={meme.name} onError={() => setFailedImage(meme.id)} />
+      )}
+      <span className="meme-ar-tag">{meme.shortLabel} · {Math.round(memeEngineScore(meme))}%</span>
+    </div>
+  )
+}
+
+function memeEngineScore(meme: Meme) {
+  return Math.max(0, Math.min(99, meme.mockConfidence))
+}
+
 function CameraPage() {
   const camera = useCamera()
   const [overlay, setOverlay] = useState(true)
@@ -157,6 +245,7 @@ function CameraPage() {
   const hands = useHandLandmarker(camera.videoRef, isActive)
   const analysis = useExpressionGestureDetection(face.landmarksRef, hands.landmarksRef, hands.handednessRef, isActive)
   const memeEngine = useMemeTriggerEngine(analysis, face.landmarksRef, hands.landmarksRef, isActive)
+  const activeMeme = memeEngine.topMatch?.meme ?? null
 
   return <Shell><main className="camera-page page-pad">
     <div className="camera-topline"><div><Sticker color={isActive ? 'mint' : camera.status === 'denied' || camera.status === 'unavailable' || camera.status === 'error' ? 'pink' : 'yellow'}>● {isActive ? 'CAMERA LIVE' : isRequesting ? 'REQUESTING CAMERA' : 'CAMERA OFF'}</Sticker><span className="technical">{camera.devices.length ? `${camera.devices.length} CAMERA${camera.devices.length === 1 ? '' : 'S'} AVAILABLE` : 'CAMERA DEVICE'}</span></div><div className="technical">MEDIAPIPE FACE + HAND · LOCAL ONLY</div></div>
@@ -167,7 +256,7 @@ function CameraPage() {
           <video ref={camera.videoRef} autoPlay muted playsInline aria-label="Live camera preview" />
           <LandmarkOverlay enabled={goatBot && isActive} video={camera.videoRef.current} faceLandmarks={face.landmarksRef} handLandmarks={hands.landmarksRef} />
           {!isActive && <div className="camera-status-message"><strong>{isRequesting ? 'ALLOW CAMERA ACCESS' : camera.status === 'idle' ? 'CAMERA STOPPED' : 'CAMERA UNAVAILABLE'}</strong><span>{camera.error ?? 'Your live camera preview will appear here.'}</span>{camera.status !== 'denied' && camera.status !== 'unavailable' && camera.status !== 'error' && <Button accent="pink" onClick={() => void camera.start()}>START CAMERA</Button>}{camera.status === 'denied' && <Button accent="pink" onClick={() => void camera.start()}>TRY AGAIN</Button>}</div>}
-          {overlay && isActive && <div className="camera-meme"><span>!!!</span><strong>SHOCKED</strong><small>MOCK UI</small></div>}
+          {activeMeme && isActive && analysis.facePresent && <MemeAROverlay meme={activeMeme} video={camera.videoRef.current} faceLandmarks={face.landmarksRef} />}
         </div>
         <div className="camera-controls">
           <Button onClick={() => isActive ? camera.stop() : void camera.start()} accent="white">{isActive ? <Pause size={16}/> : <Play size={16}/>} {isActive ? 'STOP' : 'START'}</Button>
@@ -211,7 +300,7 @@ function CameraPage() {
           </div>
         </div>
         {camera.devices.length > 0 && <div className="trigger"><div className="trigger-title"><span>CAMERA DEVICE</span></div>{camera.devices.map((device) => <label className="toggle" key={device.deviceId}><span>{device.label}</span><input type="radio" name="camera-device" checked={device.deviceId === camera.selectedDeviceId} onChange={() => void camera.selectDevice(device.deviceId)}/><i/></label>)}</div>}
-        <div className="trigger"><div className="trigger-title"><span>GOAT BOT</span><b>{goatBot ? 'VISUALIZER ON' : 'VISUALIZER OFF'}</b></div><p>Show the live face + hand landmarks as a thin local debug mesh.</p><small>DOTS + STRINGS → CAMERA ONLY</small></div><div className="trigger"><div className="trigger-title"><span>PHASE 7</span><b>LIVE MATCHING</b></div><p>The 10 built-in reactions now evaluate your local face and hand states in real time. No video is uploaded and no meme image is overlaid yet.</p><small>VISION → CONDITIONS → BEST MATCH</small></div>
+        <div className="trigger"><div className="trigger-title"><span>GOAT BOT</span><b>{goatBot ? 'VISUALIZER ON' : 'VISUALIZER OFF'}</b></div><p>Show the live face + hand landmarks as a thin local debug mesh.</p><small>DOTS + STRINGS → CAMERA ONLY</small></div><div className="trigger"><div className="trigger-title"><span>PHASE 9</span><b>AR OVERLAY</b></div><p>The stable top meme now follows the detected face in the live viewport. Overlay position, scale and rotation come from local landmarks.</p><small>FACE → ANCHOR → MEME IMAGE</small></div>
         <label className="toggle"><span>SHOW MOCK MEME</span><input type="checkbox" checked={overlay} onChange={(event) => setOverlay(event.target.checked)}/><i/></label>
       </aside>
     </div>
