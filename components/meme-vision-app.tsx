@@ -335,7 +335,15 @@ function CameraPage() {
             <span>EYES</span><strong>{analysis.facePresent ? analysis.eyes : 'NO FACE'}</strong>
             <span>MOUTH</span><strong>{analysis.facePresent ? analysis.mouth : 'NO FACE'}</strong>
             <span>HEAD</span><strong>{analysis.facePresent ? analysis.headDirection : 'NO FACE'}</strong>
-          </div></div>
+          </div>
+          {analysis.facePresent && <div className="analysis-section"><small>ACTION SIGNALS</small><div className="analysis-grid">
+            <span>TONGUE</span><strong>{Math.round(analysis.signals.tongueOut * 100)}%</strong>
+            <span>SMIRK</span><strong>{Math.round(analysis.signals.smirk * 100)}%</strong>
+            <span>HAPPY</span><strong>{Math.round(analysis.signals.happy * 100)}%</strong>
+            <span>SAD</span><strong>{Math.round(analysis.signals.sad * 100)}%</strong>
+            <span>ANGRY</span><strong>{Math.round(analysis.signals.angry * 100)}%</strong>
+            <span>SURPRISE</span><strong>{Math.round(analysis.signals.surprised * 100)}%</strong>
+          </div></div>}
           <div className="analysis-section"><small>HANDS</small>
             {analysis.handGestures.length ? analysis.handGestures.map((hand, index) => <div className="gesture-row" key={hand.handedness + index}><span>{hand.handedness === 'Hand' ? `HAND ${index + 1}` : hand.handedness}</span><strong>{hand.gesture}</strong></div>) : <div className="gesture-empty">NO HAND GESTURE DETECTED</div>}
           </div>
