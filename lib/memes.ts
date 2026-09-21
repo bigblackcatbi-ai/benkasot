@@ -242,7 +242,8 @@ export const memes: readonly Meme[] = [
 let customMemes: Meme[] = []
 
 export function getAllMemes(): Meme[] {
-  return [...memes, ...customMemes]
+  const overriddenIds = new Set(customMemes.map((meme) => meme.id))
+  return [...memes.filter((meme) => !overriddenIds.has(meme.id)), ...customMemes]
 }
 
 export function addCustomMeme(meme: Meme): void {
