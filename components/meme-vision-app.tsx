@@ -280,12 +280,10 @@ function CameraPage() {
       : fer.expression === 'surprise' ? 'SURPRISED'
       : fer.expression === 'happy' ? 'HAPPY'
       : fer.expression === 'sad' ? 'SAD'
-      : fer.expression === 'angry' ? 'ANGRY'
       : fer.expression === 'neutral' ? 'NEUTRAL'
       : 'NEUTRAL',
     signals: {
       ...actionAnalysis.signals,
-      angry: fer.probabilities.angry,
       sad: fer.probabilities.sad,
       happy: fer.probabilities.happy,
       surprised: fer.probabilities.surprise,
@@ -358,7 +356,6 @@ function CameraPage() {
           {fer.error ? <div className="gesture-empty">{fer.error}</div> : <div className="analysis-grid">
             <span>STABLE</span><strong>{fer.expression.toUpperCase()}</strong>
             <span>CONFIDENCE</span><strong>{Math.round(fer.confidence * 100)}%</strong>
-            <span>ANGRY</span><strong>{Math.round(fer.probabilities.angry * 100)}%</strong>
             <span>SAD</span><strong>{Math.round(fer.probabilities.sad * 100)}%</strong>
             <span>HAPPY</span><strong>{Math.round(fer.probabilities.happy * 100)}%</strong>
             <span>SURPRISE</span><strong>{Math.round(fer.probabilities.surprise * 100)}%</strong>
@@ -381,7 +378,6 @@ function CameraPage() {
             <span>SMIRK</span><strong>{Math.round(analysis.signals.smirk * 100)}%</strong>
             <span>HAPPY</span><strong>{Math.round(analysis.signals.happy * 100)}%</strong>
             <span>SAD</span><strong>{Math.round(analysis.signals.sad * 100)}%</strong>
-            <span>ANGRY</span><strong>{Math.round(analysis.signals.angry * 100)}%</strong>
             <span>SURPRISE</span><strong>{Math.round(analysis.signals.surprised * 100)}%</strong>
           </div></div>}
           <div className="analysis-section"><small>HANDS</small>
@@ -443,7 +439,6 @@ function CreateMemePage() {
     { value: 'happy', label: 'HAPPY' },
     { value: 'sad', label: 'SAD' },
     { value: 'crying', label: 'CRYING / TEARY' },
-    { value: 'angry', label: 'ANGRY' },
     { value: 'smirk', label: 'SMIRK' },
     { value: 'neutral', label: 'NEUTRAL FACE' },
     { value: 'squinting', label: 'SQUINT EYES' },
@@ -535,7 +530,7 @@ function CreateMemePage() {
 
   const buildCondition = (value: MemeConditionValue): MemeCondition => {
     const faceValues = new Set<MemeConditionValue>([
-      'smiling', 'excited', 'crying', 'happy', 'sad', 'angry', 'smirk', 'neutral',
+      'smiling', 'excited', 'crying', 'happy', 'sad', 'smirk', 'neutral',
       'squinting', 'wide', 'open', 'tongue-out', 'closed', 'eyes-closed', 'frown', 'wink-left', 'wink-right',
       'upward', 'downward', 'left', 'right',
     ])
