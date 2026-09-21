@@ -238,6 +238,17 @@ export const memes: readonly Meme[] = [
   },
 ]
 
+
+let customMemes: Meme[] = []
+
+export function getAllMemes(): Meme[] {
+  return [...memes, ...customMemes]
+}
+
+export function addCustomMeme(meme: Meme): void {
+  customMemes = [...customMemes.filter((item) => item.id !== meme.id), meme]
+}
+
 export function getMemeById(id: string): Meme | undefined {
   return memes.find((meme) => meme.id === id)
 }
