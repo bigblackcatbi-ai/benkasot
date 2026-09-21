@@ -47,6 +47,10 @@ function conditionMatches(
     if (value === 'excited') return analysis.faceExpression === 'SURPRISED' || analysis.faceExpression === 'HAPPY'
     if (value === 'smiling') return analysis.faceExpression === 'HAPPY' || analysis.mouth === 'SMILE'
     if (value === 'crying') return analysis.faceExpression === 'SAD' || analysis.mouth === 'FROWN'
+    if (value === 'happy') return analysis.faceExpression === 'HAPPY'
+    if (value === 'sad') return analysis.faceExpression === 'SAD'
+    if (value === 'angry') return analysis.faceExpression === 'ANGRY'
+    if (value === 'smirk') return analysis.faceExpression === 'SMIRK'
     return false
   }
 
@@ -113,40 +117,55 @@ const CONDITION_WEIGHTS: Record<MemeCondition['feature'], number> = {
 }
 
 const TRIGGER_THRESHOLD = 55
+const FAST_TRIGGER_SCORE = 82
+const NORMAL_TRIGGER_SCORE = 65
+const LOCK_MS = 1100
+const TAKEOVER_MARGIN = 12
+const TAKEOVER_SCORE = 78
 
-function matchMeme(meme: Meme, analysis: VisionAnalysisState, face: NormalizedLandmark[] | undefined, hands: NormalizedLandmark[][]): MemeMatch {
+function matchMeme(
+  meme: Meme,
+  analysis: VisionAnalysisState,
+  face: NormalizedLandmark[] | undefined,
+  hands: NormalizedLandmark[][],
+): MemeMatch {
   const conditions = meme.trigger.conditions.filter(condition => condition.enabled !== false)
-  const required = conditions.filter(condition => condition.required)
 
   if (!analysis.facePresent || !conditions.length) {
     return { meme, score: 0, matched: 0, total: conditions.length }
   }
 
-  const weightedTotal = conditions.reduce(
-    (sum, condition) => sum + (CONDITION_WEIGHTS[condition.feature] ?? 1),
-    0,
-  )
-  const weightedMatched = conditions.reduce((sum, condition) => {
-    if (!conditionMatches(condition, analysis, face, hands)) return sum
-    return sum + (CONDITION_WEIGHTS[condition.feature] ?? 1)
-  }, 0)
+  // Conditions using the same feature are alternatives (OR).
+  // Different features are combined (soft AND).
+  // Example: Happy + Sad + Open Mouth means:
+  // (Happy OR Sad) AND Open Mouth.
+  const groups = Array.from(new Map(
+    conditions.map(condition => [condition.feature, [] as MemeCondition[]]),
+  ).values())
 
-  const matched = conditions.filter(condition => conditionMatches(condition, analysis, face, hands)).length
-  const score = weightedTotal
-    ? Math.round((weightedMatched / weightedTotal) * 100)
-    : 0
-
-  // "Required" conditions now act as a soft preference rather than a hard
-  // gate. A strong primary signal can trigger the meme even when a supporting
-  // condition is imperfect, which is much closer to how a human reacts.
-  const hasPrimarySignal = conditions.some(condition => {
-    const weight = CONDITION_WEIGHTS[condition.feature] ?? 1
-    return conditionMatches(condition, analysis, face, hands) && weight >= 1
+  conditions.forEach(condition => {
+    const group = groups.find(item => item[0]?.feature === condition.feature)
+    if (group && !group.some(item => item.value === condition.value)) group.push(condition)
   })
 
-  // Keep an optional condition useful without making it a blocker.
-  const requiredMisses = required.filter(
-    condition => !conditionMatches(condition, analysis, face, hands),
+  const groupResults = groups.map(group => {
+    const matched = group.filter(condition => conditionMatches(condition, analysis, face, hands))
+    const weight = Math.max(...group.map(condition => CONDITION_WEIGHTS[condition.feature] ?? 1))
+    const groupScore = matched.length > 0 ? 1 : 0
+    return { group, matched, weight, groupScore }
+  })
+
+  const totalWeight = groupResults.reduce((sum, group) => sum + group.weight, 0)
+  const matchedWeight = groupResults.reduce((sum, group) => sum + group.weight * group.groupScore, 0)
+  const score = totalWeight ? Math.round((matchedWeight / totalWeight) * 100) : 0
+  const matched = groupResults.reduce((sum, group) => sum + group.matched.length, 0)
+
+  const hasPrimarySignal = groupResults.some(group =>
+    group.matched.length > 0 && group.weight >= 1,
+  )
+
+  const requiredMisses = conditions.filter(
+    condition => condition.required && !conditionMatches(condition, analysis, face, hands),
   ).length
 
   const relaxedThreshold = requiredMisses > 0 ? TRIGGER_THRESHOLD : 45
@@ -170,6 +189,7 @@ export function useMemeTriggerEngine(
   const candidateIdRef = useRef<string | null>(null)
   const candidateCountRef = useRef(0)
   const stableIdRef = useRef<string | null>(null)
+  const stableScoreRef = useRef(0)
   const stableUntilRef = useRef(0)
 
   useEffect(() => {
@@ -178,6 +198,7 @@ export function useMemeTriggerEngine(
       candidateIdRef.current = null
       candidateCountRef.current = 0
       stableIdRef.current = null
+      stableScoreRef.current = 0
       stableUntilRef.current = 0
       return
     }
@@ -194,19 +215,47 @@ export function useMemeTriggerEngine(
       const candidate = freshMatches[0] ?? null
       const now = performance.now()
 
+      // Keep the current winner locked unless a clearly stronger reaction appears.
+      if (stableIdRef.current) {
+        const stableMatch = freshMatches.find(match => match.meme.id === stableIdRef.current)
+
+        if (now < stableUntilRef.current) {
+          if (!candidate || candidate.meme.id !== stableIdRef.current) {
+            if (!candidate || candidate.score < stableScoreRef.current + TAKEOVER_MARGIN || candidate.score < TAKEOVER_SCORE) {
+              if (stableMatch) setMatches([stableMatch, ...freshMatches.filter(match => match.meme.id !== stableIdRef.current)])
+              return
+            }
+          }
+        }
+
+        if (!candidate) {
+          if (now < stableUntilRef.current && stableMatch) {
+            setMatches([stableMatch])
+            return
+          }
+          stableIdRef.current = null
+          stableScoreRef.current = 0
+        } else if (candidate.meme.id !== stableIdRef.current) {
+          const clearlyStronger = candidate.score >= Math.max(TAKEOVER_SCORE, stableScoreRef.current + TAKEOVER_MARGIN)
+          if (!clearlyStronger && now < stableUntilRef.current) {
+            if (stableMatch) setMatches([stableMatch, ...freshMatches.filter(match => match.meme.id !== stableIdRef.current)])
+            return
+          }
+          stableIdRef.current = null
+          stableScoreRef.current = 0
+          candidateIdRef.current = null
+          candidateCountRef.current = 0
+        }
+      }
+
       if (!candidate) {
-        // Keep a just-triggered meme visible briefly instead of dropping it
-        // on a single imperfect camera frame.
         if (stableIdRef.current && now < stableUntilRef.current) return
-        stableIdRef.current = null
         setMatches([])
         candidateIdRef.current = null
         candidateCountRef.current = 0
         return
       }
 
-      // Require the same winner for a few consecutive samples. This removes
-      // one-frame false positives without making the user hold a pose for long.
       if (candidateIdRef.current === candidate.meme.id) {
         candidateCountRef.current += 1
       } else {
@@ -214,29 +263,22 @@ export function useMemeTriggerEngine(
         candidateCountRef.current = 1
       }
 
-      const isSameStable = stableIdRef.current === candidate.meme.id
-      const isStrongEnough = candidate.score >= 70
-      const confirmationNeeded = isStrongEnough ? 2 : 3
+      const confirmationNeeded =
+        candidate.score >= FAST_TRIGGER_SCORE ? 1 :
+        candidate.score >= NORMAL_TRIGGER_SCORE ? 2 : 3
 
-      if (!isSameStable && candidateCountRef.current < confirmationNeeded) {
+      if (candidateIdRef.current !== stableIdRef.current && candidateCountRef.current < confirmationNeeded) {
         return
       }
 
-      if (!isSameStable) {
-        stableIdRef.current = candidate.meme.id
-      }
-
-      // Hold the selected reaction for a short cooldown so tiny landmark
-      // changes don't make the UI flicker between memes.
-      stableUntilRef.current = now + 900
-
-      // Once stable, allow the other matches to update normally so the panel
-      // remains useful while the winner is held.
+      stableIdRef.current = candidate.meme.id
+      stableScoreRef.current = candidate.score
+      stableUntilRef.current = now + LOCK_MS
       setMatches(freshMatches)
     }
 
     update()
-    const interval = window.setInterval(update, 120)
+    const interval = window.setInterval(update, 100)
     return () => window.clearInterval(interval)
   }, [analysis, enabled, faceLandmarks, handLandmarks])
 
