@@ -3,20 +3,9 @@
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useState } from 'react'
-import { Camera, ChevronRight, CircleHelp, Cpu, Download, Eye, Hand, History, ImagePlus, LayoutGrid, Mic, Pause, Play, Plus, RotateCcw, Settings, Sparkles, SlidersHorizontal, ToggleLeft, Video, Zap } from 'lucide-react'
-
-const memes = [
-  { name: 'JUDGING PEOPLE', short: 'JUDGING', trigger: 'Squint + neutral mouth', type: 'FACE', color: 'yellow', confidence: 84 },
-  { name: 'SHOCKED', short: 'SHOCKED', trigger: 'Hands on head + wide eyes', type: 'FACE + HAND', color: 'pink', confidence: 91 },
-  { name: 'WHAT?', short: 'WHAT?', trigger: 'Squint + mouth closed', type: 'FACE', color: 'blue', confidence: 79 },
-  { name: 'YESSS', short: 'YESSS', trigger: 'Fist + excited smile', type: 'HAND + MOVE', color: 'mint', confidence: 88 },
-  { name: 'WHO? ME?', short: 'WHO? ME?', trigger: 'Point to chest + open mouth', type: 'HAND', color: 'orange', confidence: 82 },
-  { name: 'CRYING', short: 'CRYING', trigger: 'Hands near head + open mouth', type: 'FACE + HAND', color: 'pink', confidence: 76 },
-  { name: 'MONKEY THINKING', short: 'MONKEY THINKING', trigger: 'Finger near mouth + eyes up', type: 'FACE + HAND', color: 'yellow', confidence: 87 },
-  { name: 'THINKING', short: 'THINKING', trigger: 'Finger to head + smile', type: 'HAND', color: 'blue', confidence: 81 },
-  { name: 'HAPPY', short: 'HAPPY', trigger: 'Hand on head + smile', type: 'FACE + HAND', color: 'mint', confidence: 89 },
-  { name: 'MONKEY SURPRISED', short: 'MONKEY SURPRISED', trigger: 'Hands left + eyes right', type: 'FACE + HAND', color: 'orange', confidence: 80 },
-]
+import { Camera, ChevronRight, Cpu, History, ImagePlus, LayoutGrid, Mic, Pause, Play, Plus, RotateCcw, Settings, Sparkles, SlidersHorizontal, Video, Zap } from 'lucide-react'
+import { memes } from '@/lib/memes'
+import type { Meme } from '@/types/meme'
 
 const nav = [
   ['CAMERA', '/camera', Camera], ['MEMES', '/memes', LayoutGrid], ['CREATE', '/memes/create', Plus], ['LEARN', '/learn', Sparkles], ['HISTORY', '/history', History], ['SETTINGS', '/settings', Settings],
@@ -45,7 +34,7 @@ function Home() {
   </main></Shell>
 }
 
-function MemeCard({ meme, index = 0 }: { meme: typeof memes[number]; index?: number }) { return <article className="meme-card"><Placeholder label={index % 3 === 1 ? '!!!' : meme.short} color={meme.color}/><div className="meme-card-body"><div className="card-kicker"><span className={`dot ${meme.color}`} /> {meme.type}</div><h3>{meme.name}</h3><p>{meme.trigger}</p><div className="card-footer"><span className="active-status">● ACTIVE</span><Link href={`/memes/${index + 1}`} className="small-link">EDIT →</Link></div></div></article> }
+function MemeCard({ meme, index = 0 }: { meme: Meme; index?: number }) { return <article className="meme-card"><Placeholder label={index % 3 === 1 ? '!!!' : meme.shortLabel} color={meme.accentColor}/><div className="meme-card-body"><div className="card-kicker"><span className={`dot ${meme.accentColor}`} /> {meme.typeLabel}</div><h3>{meme.name}</h3><p>{meme.triggerSummary}</p><div className="card-footer"><span className="active-status">● {meme.enabled ? 'ACTIVE' : 'DISABLED'}</span><Link href={`/memes/${meme.id}`} className="small-link">EDIT →</Link></div></div></article> }
 
 function CameraPage() { const [running, setRunning] = useState(true); const [overlay, setOverlay] = useState(true); return <Shell><main className="camera-page page-pad"><div className="camera-topline"><div><Sticker color="mint">● CAMERA LIVE</Sticker><span className="technical">DEVICE / FACECAM HD · 1280×720</span></div><div className="technical">FPS <b>30</b> · <Mic size={14}/> MIC ON · <Settings size={14}/></div></div><div className="camera-workspace"><section className="camera-stage"><div className="stage-header"><span>LIVE VIEWPORT // 001</span><span>LOCAL PROCESSING</span></div><div className="camera-viewport"><div className="scan-line"/><div className="demo-person"><div className="head"><i className="eye left"/><i className="eye right"/><i className="nose"/><i className="mouth open"/></div><div className="hand left-hand">✦</div><div className="hand right-hand">✦</div></div>{overlay && <div className="camera-meme"><span>!!!</span><strong>SHOCKED</strong><small>91% CONFIDENCE</small></div>}<span className="corner-label top-left">FACE DETECTED<br/><b>478 LANDMARKS</b></span><span className="corner-label bottom-right">HANDS: 2<br/><b>EXPRESSION: SURPRISED</b></span></div><div className="camera-controls"><Button onClick={() => setRunning(!running)} accent="white">{running ? <Pause size={16}/> : <Play size={16}/>} {running ? 'PAUSE' : 'START'}</Button><Button accent="white"><Camera size={16}/> SNAPSHOT</Button><Button accent="white"><Video size={16}/> RECORD</Button><Button accent="white"><RotateCcw size={16}/> FLIP</Button><Button accent="pink" className="meme-now">MEME NOW <Zap size={16}/></Button></div></section><aside className="detect-panel"><div className="panel-heading"><span>LIVE DETECTION</span><SlidersHorizontal size={17}/></div>{[['FACE','DETECTED'],['LEFT HAND','DETECTED'],['RIGHT HAND','DETECTED'],['EYES','WIDE'],['MOUTH','OPEN'],['HEAD','CENTER']].map(([a,b])=><div className="detect-row" key={a}><span>{a}</span><b><i className="green-dot"/> {b}</b></div>)}<div className="match-box"><span>CURRENT MATCH</span><h2>SHOCKED</h2><div className="confidence"><b>91%</b><div><span style={{width:'91%'}} /></div></div><p>Stable for 12 frames</p></div><div className="trigger"><div className="trigger-title"><span>ACTIVE TRIGGER</span><Button accent="white">EDIT</Button></div><h3>SHOCKED</h3>{['both hands on head','eyes wide','mouth open'].map(x=><p key={x}>✓ {x}</p>)}<small>TRIGGERED 04.2s AGO</small></div>{[['ENABLE MEME OVERLAY',overlay],['AUTO TRIGGER',true],['SOUND EFFECTS',false],['SHOW CONFIDENCE',true],['SHOW LANDMARKS',true]].map(([x,on])=><label className="toggle" key={x as string}><span>{x as string}</span><input type="checkbox" defaultChecked={on as boolean} onChange={x === 'ENABLE MEME OVERLAY' ? e => setOverlay(e.target.checked) : undefined}/><i/></label>)}</aside></div></main></Shell> }
 
