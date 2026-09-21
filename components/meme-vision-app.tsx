@@ -540,7 +540,7 @@ function CreateMemePage() {
         <div className="condition-grid">
           {visibleOptions.map((option) => <button key={option.value} className={selectedConditions.includes(option.value) ? 'condition-chip active' : 'condition-chip'} onClick={() => toggleCondition(option.value)}>{selectedConditions.includes(option.value) ? '✓ ' : ''}{option.label}</button>)}
         </div>
-        <p className="custom-note-inline">Select multiple conditions. In combined mode you can mix FACE + HAND. Matching uses the same soft scoring system as the built-in memes.</p>
+        <div className="custom-note-inline">Select multiple conditions. In combined mode you can mix FACE + HAND. Matching uses the same soft scoring system as the built-in memes.</div>
         <div className="custom-actions">
           <Button accent="pink" onClick={saveMeme}><Zap size={16}/> {saved ? 'SAVED TO SESSION' : editId ? 'UPDATE MEME' : 'SAVE CUSTOM MEME'}</Button>
           {saved && <Link href="/camera" className="brutal-btn white">TEST IN CAMERA →</Link>}
