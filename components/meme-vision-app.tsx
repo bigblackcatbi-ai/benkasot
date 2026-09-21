@@ -12,6 +12,7 @@ import { useCamera } from '@/hooks/use-camera'
 import { useFaceLandmarker } from '@/hooks/use-face-landmarker'
 import { useHandLandmarker } from '@/hooks/use-hand-landmarker'
 import { useExpressionGestureDetection } from '@/hooks/use-expression-gesture-detection'
+import { useFacialExpressionFER } from '@/hooks/use-facial-expression-fer'
 import { useMemeTriggerEngine } from '@/hooks/use-meme-trigger-engine'
 import { useLearnedGesture } from '@/hooks/use-learned-gesture'
 
@@ -270,12 +271,32 @@ function CameraPage() {
   const isRequesting = camera.status === 'requesting'
   const face = useFaceLandmarker(camera.videoRef, isActive)
   const hands = useHandLandmarker(camera.videoRef, isActive)
-  const analysis = useExpressionGestureDetection(face.landmarksRef, hands.landmarksRef, face.blendshapesRef, hands.handednessRef, camera.videoRef, isActive)
+  const actionAnalysis = useExpressionGestureDetection(face.landmarksRef, hands.landmarksRef, face.blendshapesRef, hands.handednessRef, camera.videoRef, isActive)
+  const fer = useFacialExpressionFER(face.landmarksRef, camera.videoRef, isActive)
+  const analysis = {
+    ...actionAnalysis,
+    faceExpression: fer.expression === 'NO FACE'
+      ? actionAnalysis.faceExpression
+      : fer.expression === 'surprise' ? 'SURPRISED'
+      : fer.expression.toUpperCase() as typeof actionAnalysis.faceExpression,
+    signals: {
+      ...actionAnalysis.signals,
+      angry: fer.probabilities.angry,
+      sad: fer.probabilities.sad,
+      happy: fer.probabilities.happy,
+      surprised: fer.probabilities.surprise,
+      neutral: fer.probabilities.neutral,
+    },
+    visionConfidence: {
+      ...actionAnalysis.visionConfidence,
+      expression: fer.confidence,
+    },
+  }
   const memeEngine = useMemeTriggerEngine(analysis, face.landmarksRef, hands.landmarksRef, isActive)
   const activeMeme = memeEngine.topMatch?.meme ?? null
 
   return <Shell><main className="camera-page page-pad">
-    <div className="camera-topline"><div><Sticker color={isActive ? 'mint' : camera.status === 'denied' || camera.status === 'unavailable' || camera.status === 'error' ? 'pink' : 'yellow'}>● {isActive ? 'CAMERA LIVE' : isRequesting ? 'REQUESTING CAMERA' : 'CAMERA OFF'}</Sticker><span className="technical">{camera.devices.length ? `${camera.devices.length} CAMERA${camera.devices.length === 1 ? '' : 'S'} AVAILABLE` : 'CAMERA DEVICE'}</span></div><div className="technical">ACTION SIGNALS + MEDIAPIPE · LOCAL INFERENCE</div></div>
+    <div className="camera-topline"><div><Sticker color={isActive ? 'mint' : camera.status === 'denied' || camera.status === 'unavailable' || camera.status === 'error' ? 'pink' : 'yellow'}>● {isActive ? 'CAMERA LIVE' : isRequesting ? 'REQUESTING CAMERA' : 'CAMERA OFF'}</Sticker><span className="technical">{camera.devices.length ? `${camera.devices.length} CAMERA${camera.devices.length === 1 ? '' : 'S'} AVAILABLE` : 'CAMERA DEVICE'}</span></div><div className="technical">FER + MEDIAPIPE · LOCAL INFERENCE</div></div>
     <div className="camera-workspace">
       <section className="camera-stage">
         <div className="stage-header"><span>LIVE VIEWPORT // 001</span><span>LOCAL VISION INPUT</span></div>
@@ -327,6 +348,21 @@ function CameraPage() {
           </div>
           <small className="debug-note">FAST ≥ 82 · NORMAL ≥ 65 · TAKEOVER ≥ 78 + 12 MARGIN</small>
         </div>}
+
+        <div className="analysis-box">
+          <div className="analysis-heading"><span>FER MODEL</span><b>{fer.status.toUpperCase()}</b></div>
+          {fer.error ? <div className="gesture-empty">{fer.error}</div> : <div className="analysis-grid">
+            <span>STABLE</span><strong>{fer.expression.toUpperCase()}</strong>
+            <span>CONFIDENCE</span><strong>{Math.round(fer.confidence * 100)}%</strong>
+            <span>ANGRY</span><strong>{Math.round(fer.probabilities.angry * 100)}%</strong>
+            <span>SAD</span><strong>{Math.round(fer.probabilities.sad * 100)}%</strong>
+            <span>HAPPY</span><strong>{Math.round(fer.probabilities.happy * 100)}%</strong>
+            <span>SURPRISE</span><strong>{Math.round(fer.probabilities.surprise * 100)}%</strong>
+            <span>NEUTRAL</span><strong>{Math.round(fer.probabilities.neutral * 100)}%</strong>
+            <span>FEAR</span><strong>{Math.round(fer.probabilities.fear * 100)}%</strong>
+            <span>DISGUST</span><strong>{Math.round(fer.probabilities.disgust * 100)}%</strong>
+          </div>}
+        </div>
 
         <div className="analysis-box">
           <div className="analysis-heading"><span>EXPRESSION / GESTURE</span><b>LIVE</b></div>
