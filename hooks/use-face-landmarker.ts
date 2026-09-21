@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
+import type { RefObject } from 'react'
 import { FaceLandmarker, FilesetResolver } from '@mediapipe/tasks-vision'
 
 const WASM_URL = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@1.0.1/wasm'
@@ -14,7 +15,7 @@ export interface FaceDetectionState {
   error?: string
 }
 
-export function useFaceLandmarker(videoRef: React.RefObject<HTMLVideoElement | null>, enabled: boolean) {
+export function useFaceLandmarker(videoRef: RefObject<HTMLVideoElement | null>, enabled: boolean) {
   const landmarkerRef = useRef<FaceLandmarker | null>(null)
   const frameRef = useRef<number | null>(null)
   const requestIdRef = useRef(0)
