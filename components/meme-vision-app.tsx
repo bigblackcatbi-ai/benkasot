@@ -5,12 +5,15 @@ import { usePathname } from 'next/navigation'
 import { useEffect, useRef, useState } from 'react'
 import { Camera, ChevronRight, Cpu, History, ImagePlus, LayoutGrid, Mic, Pause, Play, Plus, RotateCcw, Settings, Sparkles, SlidersHorizontal, Video, Zap } from 'lucide-react'
 import { addCustomMeme, deleteMeme, getAllMemes, getMemeById, memes } from '@/lib/memes'
+import { addLearnedGesture, deleteLearnedGesture, getLearnedGestures } from '@/lib/learned-gestures'
+import type { LearnedGestureProfile } from '@/types/learned-gesture'
 import type { Meme, MemeCondition, MemeConditionValue } from '@/types/meme'
 import { useCamera } from '@/hooks/use-camera'
 import { useFaceLandmarker } from '@/hooks/use-face-landmarker'
 import { useHandLandmarker } from '@/hooks/use-hand-landmarker'
 import { useExpressionGestureDetection } from '@/hooks/use-expression-gesture-detection'
 import { useMemeTriggerEngine } from '@/hooks/use-meme-trigger-engine'
+import { useLearnedGesture } from '@/hooks/use-learned-gesture'
 
 const nav = [
   ['CAMERA', '/camera', Camera], ['MEMES', '/memes', LayoutGrid], ['CREATE', '/memes/create', Plus], ['LEARN', '/learn', Sparkles], ['HISTORY', '/history', History], ['SETTINGS', '/settings', Settings],
@@ -556,11 +559,111 @@ function CreateMemePage() {
   </main></Shell>
 }
 
+function LearnPage() {
+  const camera = useCamera()
+  const [profiles, setProfiles] = useState<LearnedGestureProfile[]>(getLearnedGestures())
+  const [name, setName] = useState('')
+  const [saved, setSaved] = useState(false)
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    void camera.start()
+    return () => camera.stop()
+  }, [camera.start, camera.stop])
+
+  const isActive = camera.status === 'active'
+  const hands = useHandLandmarker(camera.videoRef, isActive)
+  const learner = useLearnedGesture(hands.landmarksRef, hands.handednessRef, isActive, profiles)
+
+  const saveLearnedGesture = () => {
+    if (!learner.recordedLandmarks) {
+      setError('Record a gesture for 3 seconds first.')
+      return
+    }
+    if (!name.trim()) {
+      setError('Give the learned gesture a name.')
+      return
+    }
+
+    const profile: LearnedGestureProfile = {
+      id: `learned-${Date.now()}`,
+      name: name.trim().toUpperCase(),
+      createdAt: Date.now(),
+      handedness: learner.recordedHandedness,
+      landmarks: learner.recordedLandmarks,
+      sampleCount: learner.sampleCount,
+    }
+    addLearnedGesture(profile)
+    setProfiles(getLearnedGestures())
+    setSaved(true)
+    setError('')
+  }
+
+  const removeProfile = (id: string) => {
+    deleteLearnedGesture(id)
+    setProfiles(getLearnedGestures())
+  }
+
+  return <Shell><main className="page-pad content-page learn-page">
+    <div className="page-title">
+      <Sticker color="pink">PHASE 11 / TEACH THE MACHINE</Sticker>
+      <h1>TEACH IT A<br /><em>GESTURE.</em></h1>
+      <p>Hold a hand pose for three seconds. MEME//VISION builds a local landmark signature and can recognize that pose later in this session.</p>
+    </div>
+
+    <div className="learn-layout">
+      <section className="big-panel">
+        <div className="panel-heading"><span>01 // LIVE TRAINING CAMERA</span><span>{isActive ? 'ACTIVE' : 'OFF'}</span></div>
+        <div className="learn-camera">
+          <video ref={camera.videoRef} autoPlay muted playsInline aria-label="Live training camera" />
+          {!isActive && <div className="learn-camera-message"><strong>{camera.status === 'requesting' ? 'ALLOW CAMERA ACCESS' : 'CAMERA OFF'}</strong><span>{camera.error ?? 'Start the camera to teach a gesture.'}</span><Button accent="pink" onClick={() => void camera.start()}>START CAMERA</Button></div>}
+          {isActive && <div className="learn-hud"><span>HAND LANDMARKS: {hands.landmarkCount}</span><span>{learner.recording ? `RECORDING ${learner.progress}%` : 'READY'}</span></div>}
+        </div>
+        <div className="learn-controls">
+          <Button accent="pink" disabled={!isActive || learner.recording} onClick={() => { setError(''); setSaved(false); learner.startRecording() }}><Play size={16}/> {learner.recording ? 'RECORDING...' : 'RECORD 3 SEC'}</Button>
+          <Button accent="white" disabled={learner.recording} onClick={() => { learner.clearRecording(); setSaved(false); setError('') }}><RotateCcw size={16}/> RESET TAKE</Button>
+        </div>
+        <div className="learn-progress"><span style={{ width: `${learner.progress}%` }} /></div>
+        <div className="learn-stats">
+          <span>SAMPLES <b>{learner.sampleCount}</b></span>
+          <span>HAND <b>{learner.recordedHandedness.toUpperCase()}</b></span>
+          <span>SIGNATURE <b>{learner.recordedLandmarks ? 'CAPTURED' : 'WAITING'}</b></span>
+        </div>
+      </section>
+
+      <section className="big-panel learn-builder">
+        <div className="panel-heading"><span>02 // NAME THE GESTURE</span><span>LOCAL ONLY</span></div>
+        <input className="custom-input" value={name} onChange={event => { setName(event.target.value); setSaved(false) }} placeholder="E.G. MY SECRET SIGNAL" maxLength={32} />
+        <div className="learn-signature">
+          <Sticker color="yellow">LANDMARK SIGNATURE</Sticker>
+          <h2>{learner.recordedLandmarks ? 'READY TO SAVE.' : 'NOT CAPTURED YET.'}</h2>
+          <p>{learner.recordedLandmarks ? `${learner.sampleCount} samples averaged into one normalized 21-point hand signature.` : 'Click RECORD 3 SEC, then hold the pose naturally until the capture completes.'}</p>
+        </div>
+        <Button accent="black" disabled={!learner.recordedLandmarks} onClick={saveLearnedGesture}><Zap size={16}/> {saved ? 'LEARNED TO SESSION' : 'SAVE LEARNED GESTURE'}</Button>
+        {error && <div className="custom-error">{error}</div>}
+
+        <div className="panel-heading learn-list-heading"><span>03 // LEARNED PROFILES</span><span>{profiles.length}</span></div>
+        {profiles.length ? profiles.map(profile => <div className="learn-profile" key={profile.id}>
+          <div><strong>{profile.name}</strong><span>{profile.handedness.toUpperCase()} HAND · {profile.sampleCount} SAMPLES</span></div>
+          <button type="button" className="small-link delete-link" onClick={() => removeProfile(profile.id)}>DELETE</button>
+        </div>) : <div className="gesture-empty">NO LEARNED GESTURES YET.</div>}
+      </section>
+    </div>
+
+    <div className="custom-note">
+      <Sticker color="blue">PHASE 11 NOTE</Sticker>
+      <p>Learning is local and session-only for now. The system stores a normalized hand landmark signature, not camera video. Persistent profiles arrive in Phase 12.</p>
+    </div>
+
+    {learner.matches.length > 0 && <div className="learn-match"><Sticker color="mint">LIVE MATCH</Sticker><strong>{learner.matches[0].profile.name}</strong><span>{learner.matches[0].score}% SIGNATURE MATCH</span></div>}
+  </main></Shell>
+}
+
 function GenericPage({ kind }: { kind: string }) { const config: Record<string,[string,string,string]> = { create:['CREATE YOUR OWN REACTION','Build a trigger that feels like you.','UPLOAD → CONDITION → TEST → SAVE'], learn:['TEACH IT A NEW REACTION','Show the camera what your reaction looks like.','RECORD → ANALYZE → PROFILE'], history:['REACTION HISTORY','The receipts. Nothing more, nothing less.','LOCAL LOG / VIDEO NOT STORED'], settings:['SETTINGS','Tune the machine to your particular brand of chaos.','PREFERENCES / DEBUG / PRIVACY'], about:['HOW IT WORKS','Sophisticated computer vision. Extremely unserious output.','CAMERA → VISION → MATCH → REACT'] }; const [title, sub, kicker] = config[kind] || config.about; return <Shell><main className="page-pad content-page generic"><div className="page-title"><Sticker color={kind==='settings'?'blue':'pink'}>{kicker}</Sticker><h1>{title}</h1><p>{sub}</p></div><div className="generic-layout"><section className="big-panel"><div className="panel-heading"><span>{kind === 'about' ? 'SYSTEM DIAGRAM' : kind.toUpperCase() + ' WORKSPACE'}</span><Cpu size={17}/></div>{kind === 'create' && <><div className="upload-box"><ImagePlus size={32}/><h2>DROP A MEME HERE</h2><p>PNG · JPG · WEBP · GIF</p><Button accent="pink">CHOOSE FILE</Button></div><div className="builder-row"><span>WHEN</span><Sticker color="yellow">FACE</Sticker><Plus/><Sticker color="blue">HAND</Sticker><Plus/><Sticker color="mint">MOVEMENT</Sticker></div></>}{kind === 'learn' && <><div className="training-preview"><div className="training-face">READY?</div><span>CAMERA PREVIEW // HOLD YOUR REACTION FOR 3 SECONDS</span></div><div className="countdown"><b>03</b><span>GET READY</span><Button accent="pink">START RECORDING</Button></div></>}{kind === 'history' && <HistoryRows/>}{kind === 'settings' && <SettingsRows/>}{kind === 'about' && <AboutDiagram/>}</section><aside className="side-note"><Sticker color="yellow">STATUS</Sticker><h2>VISION ONLINE.</h2><p>Everything here is a demo state, ready for MediaPipe to take over in VS Code.</p><Button accent="black">OPEN CAMERA <ChevronRight size={15}/></Button></aside></div></main></Shell> }
 function HistoryRows(){return <div className="history-rows">{[['11:42:12','SHOCKED','91%'],['11:40:03','JUDGING PEOPLE','84%'],['11:37:48','YESSS','88%'],['11:21:19','THINKING','79%']].map(r=><div className="history-row" key={r[0]}><span>{r[0]}</span><strong>{r[1]}</strong><b>{r[2]}</b><ChevronRight size={15}/></div>)}</div>}
 function SettingsRows(){return <div className="settings-rows">{['CAMERA','AUDIO','DETECTION','OVERLAY','PRIVACY','PERFORMANCE','APPEARANCE'].map((x,i)=><div className="settings-row" key={x}><span>{x}</span><b>{i===4?'LOCAL PROCESSING ENABLED':'CONFIGURE'}</b><ChevronRight size={16}/></div>)}</div>}
 function AboutDiagram(){return <div className="diagram">{['CAMERA','VISION ENGINE','FACE + HAND LANDMARKS','EXPRESSION / GESTURE','MEME MATCHER','AR OVERLAY'].map((x,i)=><div key={x}><strong>{x}</strong>{i<5 && <ChevronRight/>}</div>)}</div>}
 
-export default function MemeVisionApp(){ const path=usePathname(); if(path==='/') return <Home/>; if(path==='/camera') return <CameraPage/>; if(path==='/memes') return <LibraryPage/>; if(path==='/memes/create') return <CreateMemePage/>; if(path==='/learn') return <GenericPage kind="learn"/>; if(path==='/history') return <GenericPage kind="history"/>; if(path==='/settings') return <GenericPage kind="settings"/>; return <GenericPage kind="about"/> }
+export default function MemeVisionApp(){ const path=usePathname(); if(path==='/') return <Home/>; if(path==='/camera') return <CameraPage/>; if(path==='/memes') return <LibraryPage/>; if(path==='/memes/create') return <CreateMemePage/>; if(path==='/learn') return <LearnPage/>; if(path==='/history') return <GenericPage kind="history"/>; if(path==='/settings') return <GenericPage kind="settings"/>; return <GenericPage kind="about"/> }
 
 export { Button, Logo, Shell, MemeCard, memes }
