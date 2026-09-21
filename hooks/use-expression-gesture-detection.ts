@@ -191,32 +191,76 @@ const fingerAngle = (a: NormalizedLandmark[], mcp: number, pip: number, tip: num
 const isExtended = (hand: NormalizedLandmark[], mcp: number, pip: number, tip: number) =>
   fingerAngle(hand, mcp, pip, tip) > 155 && distance(hand[tip], hand[0]) > distance(hand[pip], hand[0]) * 1.02
 
-function analyzeHand(hand: NormalizedLandmark[]): HandGesture {
-  if (hand.length < 21) return 'UNKNOWN'
+function analyzeHand(hand: NormalizedLandmark[]): { gesture: HandGesture; confidence: number } {
+  if (hand.length < 21) return { gesture: 'UNKNOWN', confidence: 0 }
 
-  const index = isExtended(hand, 5, 6, 8)
-  const middle = isExtended(hand, 9, 10, 12)
-  const ring = isExtended(hand, 13, 14, 16)
-  const pinky = isExtended(hand, 17, 18, 20)
-  const thumbExtended = distance(hand[4], hand[0]) > distance(hand[3], hand[0]) * 1.02
-  const thumbUp = hand[4].y < hand[2].y - 0.06
-  const thumbDown = hand[4].y > hand[2].y + 0.08
+  const fingerExtensionScore = (mcp: number, pip: number, tip: number) => {
+    const bend = (fingerAngle(hand, mcp, pip, tip) - 135) / 30
+    const reach = (distance(hand[tip], hand[0]) / Math.max(distance(hand[pip], hand[0]), 0.001) - 0.98) / 0.12
+    return clamp01((clamp01(bend) + clamp01(reach)) / 2)
+  }
+  const fingerScores = [
+    fingerExtensionScore(5, 6, 8),
+    fingerExtensionScore(9, 10, 12),
+    fingerExtensionScore(13, 14, 16),
+    fingerExtensionScore(17, 18, 20),
+  ]
+  const index = fingerScores[0] > 0.52
+  const middle = fingerScores[1] > 0.52
+  const ring = fingerScores[2] > 0.52
+  const pinky = fingerScores[3] > 0.52
+
   const palmSize = Math.max(distance(hand[0], hand[9]), 0.001)
+  const thumbReach = clamp01((distance(hand[4], hand[0]) / Math.max(distance(hand[3], hand[0]), 0.001) - 1) / 0.18)
+  const thumbUpScore = clamp01((hand[2].y - hand[4].y - 0.035) / 0.10)
+  const thumbDownScore = clamp01((hand[4].y - hand[2].y - 0.045) / 0.12)
   const thumbIndexGap = distance(hand[4], hand[8]) / palmSize
-  const extendedCount = [index, middle, ring, pinky].filter(Boolean).length
+  const pinchScore = clamp01((0.42 - thumbIndexGap) / 0.14)
+  const okScore = clamp01((0.48 - thumbIndexGap) / 0.18)
 
-  if (thumbIndexGap < 0.42 && middle && ring && pinky) return 'OK'
-  if (thumbIndexGap < 0.34 && !middle && !ring && !pinky) return 'PINCH'
-  if (thumbUp && thumbExtended && extendedCount === 0) return 'THUMBS UP'
-  if (thumbDown && thumbExtended && extendedCount === 0) return 'THUMBS DOWN'
-  if (index && !middle && !ring && pinky && thumbExtended) return 'FINGER GUN'
-  if (!index && !middle && !ring && pinky) return 'ROCK'
-  if (index && middle && ring && pinky) return thumbExtended ? 'OPEN PALM' : 'FOUR FINGERS'
-  if (index && middle && ring && !pinky) return 'THREE FINGERS'
-  if (index && middle && !ring && !pinky) return 'PEACE'
-  if (index && !middle && !ring && !pinky) return 'POINTING'
-  if (!index && !middle && !ring && !pinky && !thumbExtended) return 'FIST'
-  return 'UNKNOWN'
+  const scores = {
+    index: fingerScores[0],
+    middle: fingerScores[1],
+    ring: fingerScores[2],
+    pinky: fingerScores[3],
+    thumb: thumbReach,
+  }
+
+  const extendedCount = [index, middle, ring, pinky].filter(Boolean).length
+  const candidates: Array<{ gesture: HandGesture; confidence: number }> = []
+
+  const pushPattern = (
+    gesture: HandGesture,
+    required: number[],
+    forbidden: number[],
+    extra = 1,
+  ) => {
+    const requiredScore = required.length ? Math.min(...required.map(index => [scores.index, scores.middle, scores.ring, scores.pinky, scores.thumb][index])) : 1
+    const forbiddenScore = forbidden.length ? Math.min(...forbidden.map(index => 1 - [scores.index, scores.middle, scores.ring, scores.pinky, scores.thumb][index])) : 1
+    candidates.push({ gesture, confidence: clamp01(Math.min(requiredScore, forbiddenScore) * extra) })
+  }
+
+  pushPattern('OPEN PALM', [0, 1, 2, 3, 4], [])
+  pushPattern('FOUR FINGERS', [0, 1, 2, 3], [4])
+  pushPattern('THREE FINGERS', [0, 1, 2], [3, 4])
+  pushPattern('PEACE', [0, 1], [2, 3, 4])
+  pushPattern('POINTING', [0], [1, 2, 3])
+  pushPattern('ROCK', [3], [0, 1, 2])
+  pushPattern('FIST', [], [0, 1, 2, 3, 4])
+  pushPattern('FINGER GUN', [0, 3, 4], [1, 2])
+  candidates.push({ gesture: 'THUMBS UP', confidence: clamp01(Math.min(thumbReach, thumbUpScore, 1 - Math.max(...fingerScores)) * 1.08) })
+  candidates.push({ gesture: 'THUMBS DOWN', confidence: clamp01(Math.min(thumbReach, thumbDownScore, 1 - Math.max(...fingerScores)) * 1.08) })
+  candidates.push({ gesture: 'PINCH', confidence: clamp01(Math.min(pinchScore, 1 - Math.max(fingerScores))) })
+  candidates.push({ gesture: 'OK', confidence: clamp01(Math.min(okScore, fingerScores[1], fingerScores[2], fingerScores[3])) })
+
+  candidates.sort((a, b) => b.confidence - a.confidence)
+  const best = candidates[0]
+  const second = candidates[1]
+  if (!best || best.confidence < 0.48 || (second && best.confidence - second.confidence < 0.08)) {
+    return { gesture: 'UNKNOWN', confidence: best?.confidence ?? 0.2 }
+  }
+
+  return best
 }
 
 type FaceAnalysis = ReturnType<typeof analyzeFace>
@@ -410,7 +454,7 @@ export function useExpressionGestureDetection(
         handedness: handedness.current[index] === 'Left' || handedness.current[index] === 'Right'
           ? handedness.current[index] as 'Left' | 'Right'
           : 'Hand',
-        gesture: analyzeHand(hand),
+        gesture: analyzeHand(hand).gesture,
       }))
       const handGestures = smoothHandGestures(rawHandGestures)
 
@@ -419,7 +463,10 @@ export function useExpressionGestureDetection(
         handGestures,
         visionConfidence: {
           ...faceState.visionConfidence,
-          hands: handGestures.map(hand => hand.gesture === 'UNKNOWN' ? 0.25 : 0.85),
+          hands: rawHandGestures.map((hand, index) => {
+          const raw = analyzeHand(handLandmarks.current[index])
+          return hand.gesture === 'UNKNOWN' ? Math.min(0.35, raw.confidence) : raw.confidence
+        }),
         },
         baseline: baselineRef.current,
       })
