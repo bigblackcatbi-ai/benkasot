@@ -13,6 +13,16 @@ export interface MemeMatch {
   total: number
 }
 
+export interface MemeTriggerDebug {
+  candidateId: string | null
+  candidateScore: number
+  candidateSamples: number
+  confirmationNeeded: number
+  stableId: string | null
+  stableScore: number
+  lockRemainingMs: number
+}
+
 const distance = (a: NormalizedLandmark, b: NormalizedLandmark) =>
   Math.hypot(a.x - b.x, a.y - b.y, (a.z ?? 0) - (b.z ?? 0))
 
@@ -180,6 +190,15 @@ export function useMemeTriggerEngine(
   enabled: boolean,
 ) {
   const [matches, setMatches] = useState<MemeMatch[]>([])
+  const [debug, setDebug] = useState<MemeTriggerDebug>({
+    candidateId: null,
+    candidateScore: 0,
+    candidateSamples: 0,
+    confirmationNeeded: 0,
+    stableId: null,
+    stableScore: 0,
+    lockRemainingMs: 0,
+  })
   const candidateIdRef = useRef<string | null>(null)
   const candidateCountRef = useRef(0)
   const stableIdRef = useRef<string | null>(null)
@@ -208,6 +227,19 @@ export function useMemeTriggerEngine(
 
       const candidate = freshMatches[0] ?? null
       const now = performance.now()
+      const confirmationNeeded = candidate
+        ? candidate.score >= FAST_TRIGGER_SCORE ? 1 : candidate.score >= NORMAL_TRIGGER_SCORE ? 2 : 3
+        : 0
+
+      setDebug({
+        candidateId: candidate?.meme.id ?? null,
+        candidateScore: candidate?.score ?? 0,
+        candidateSamples: candidate && candidateIdRef.current === candidate.meme.id ? candidateCountRef.current : 1,
+        confirmationNeeded,
+        stableId: stableIdRef.current,
+        stableScore: stableScoreRef.current,
+        lockRemainingMs: Math.max(0, stableUntilRef.current - now),
+      })
 
       // Keep the current winner locked unless a clearly stronger reaction appears.
       if (stableIdRef.current) {
@@ -257,10 +289,6 @@ export function useMemeTriggerEngine(
         candidateCountRef.current = 1
       }
 
-      const confirmationNeeded =
-        candidate.score >= FAST_TRIGGER_SCORE ? 1 :
-        candidate.score >= NORMAL_TRIGGER_SCORE ? 2 : 3
-
       if (candidateIdRef.current !== stableIdRef.current && candidateCountRef.current < confirmationNeeded) {
         return
       }
@@ -276,5 +304,5 @@ export function useMemeTriggerEngine(
     return () => window.clearInterval(interval)
   }, [analysis, enabled, faceLandmarks, handLandmarks])
 
-  return { matches, topMatch: matches[0] ?? null }
+  return { matches, topMatch: matches[0] ?? null, debug }
 }
