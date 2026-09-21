@@ -37,7 +37,9 @@ function conditionMatches(
   if (condition.feature === 'eyes') {
     if (value === 'squinting') return analysis.eyes === 'CLOSED' || analysis.eyes.startsWith('WINK')
     if (value === 'wide') return analysis.faceExpression === 'SURPRISED' || (analysis.eyes === 'OPEN' && analysis.mouth === 'OPEN')
-    if (value === 'closed') return analysis.eyes === 'CLOSED'
+    if (value === 'eyes-closed') return analysis.eyes === 'CLOSED'
+    if (value === 'wink-left') return analysis.eyes === 'WINK LEFT'
+    if (value === 'wink-right') return analysis.eyes === 'WINK RIGHT'
     return false
   }
 
@@ -66,6 +68,8 @@ function conditionMatches(
 
   if (condition.feature === 'gaze') {
     if (value === 'upward') return analysis.headDirection === 'UP'
+    if (value === 'downward') return analysis.headDirection === 'DOWN'
+    if (value === 'left') return analysis.headDirection === 'LEFT'
     if (value === 'right') return analysis.headDirection === 'RIGHT'
     return false
   }
@@ -84,6 +88,14 @@ function conditionMatches(
       const leftOfFace = hands.filter(hand => hand[0] && hand[0].x < faceCenter.x - 0.08).length
       return hands.length >= 2 && leftOfFace >= 2
     }
+    if (value === 'two-hands') return hands.length >= 2
+    const bothGestureMap: Record<string, string> = {
+      'both-fists': 'FIST',
+      'both-open-palms': 'OPEN PALM',
+      'both-thumbs-up': 'THUMBS UP',
+      'both-peace': 'PEACE',
+    }
+    if (bothGestureMap[value]) return hands.length >= 2 && analysis.handGestures.filter(hand => hand.gesture === bothGestureMap[value]).length >= 2
     const gestureMap: Record<string, string> = {
       fist: 'FIST',
       'open-palm': 'OPEN PALM',
