@@ -10,6 +10,7 @@ import { useCamera } from '@/hooks/use-camera'
 import { useFaceLandmarker } from '@/hooks/use-face-landmarker'
 import { useHandLandmarker } from '@/hooks/use-hand-landmarker'
 import { useExpressionGestureDetection } from '@/hooks/use-expression-gesture-detection'
+import { useMemeTriggerEngine } from '@/hooks/use-meme-trigger-engine'
 
 const nav = [
   ['CAMERA', '/camera', Camera], ['MEMES', '/memes', LayoutGrid], ['CREATE', '/memes/create', Plus], ['LEARN', '/learn', Sparkles], ['HISTORY', '/history', History], ['SETTINGS', '/settings', Settings],
@@ -155,6 +156,7 @@ function CameraPage() {
   const face = useFaceLandmarker(camera.videoRef, isActive)
   const hands = useHandLandmarker(camera.videoRef, isActive)
   const analysis = useExpressionGestureDetection(face.landmarksRef, hands.landmarksRef, hands.handednessRef, isActive)
+  const memeEngine = useMemeTriggerEngine(analysis, face.landmarksRef, hands.landmarksRef, isActive)
 
   return <Shell><main className="camera-page page-pad">
     <div className="camera-topline"><div><Sticker color={isActive ? 'mint' : camera.status === 'denied' || camera.status === 'unavailable' || camera.status === 'error' ? 'pink' : 'yellow'}>● {isActive ? 'CAMERA LIVE' : isRequesting ? 'REQUESTING CAMERA' : 'CAMERA OFF'}</Sticker><span className="technical">{camera.devices.length ? `${camera.devices.length} CAMERA${camera.devices.length === 1 ? '' : 'S'} AVAILABLE` : 'CAMERA DEVICE'}</span></div><div className="technical">MEDIAPIPE FACE + HAND · LOCAL ONLY</div></div>
@@ -188,6 +190,15 @@ function CameraPage() {
         <div className="detect-row"><span>LEFT / RIGHT</span><b>{hands.leftHandDetected ? "L" : "-"} / {hands.rightHandDetected ? "R" : "-"}</b></div>
         {(face.error || hands.error) && <div className="match-box"><span>VISION MESSAGE</span><h2>CHECK MEDIAPIPE</h2><p>{face.error ?? hands.error}</p></div>}
         <div className="analysis-box">
+          <div className="analysis-heading"><span>MEME MATCH ENGINE</span><b>{memeEngine.topMatch ? memeEngine.topMatch.score + '%' : 'WAITING'}</b></div>
+          {memeEngine.topMatch ? <div className="meme-match-live">
+            <strong>{memeEngine.topMatch.meme.name}</strong>
+            <span>{memeEngine.topMatch.matched}/{memeEngine.topMatch.total} TRIGGERS MATCHED</span>
+          </div> : <div className="gesture-empty">NO MEME TRIGGERED YET</div>}
+          {memeEngine.matches.slice(1, 4).map(match => <div className="meme-match-row" key={match.meme.id}><span>{match.meme.shortLabel}</span><b>{match.score}%</b></div>)}
+        </div>
+
+        <div className="analysis-box">
           <div className="analysis-heading"><span>EXPRESSION / GESTURE</span><b>LIVE</b></div>
           <div className="analysis-section"><small>FACE</small><div className="analysis-grid">
             <span>EXPRESSION</span><strong>{analysis.faceExpression}</strong>
@@ -200,7 +211,7 @@ function CameraPage() {
           </div>
         </div>
         {camera.devices.length > 0 && <div className="trigger"><div className="trigger-title"><span>CAMERA DEVICE</span></div>{camera.devices.map((device) => <label className="toggle" key={device.deviceId}><span>{device.label}</span><input type="radio" name="camera-device" checked={device.deviceId === camera.selectedDeviceId} onChange={() => void camera.selectDevice(device.deviceId)}/><i/></label>)}</div>}
-        <div className="trigger"><div className="trigger-title"><span>GOAT BOT</span><b>{goatBot ? 'VISUALIZER ON' : 'VISUALIZER OFF'}</b></div><p>Show the live face + hand landmarks as a thin local debug mesh.</p><small>DOTS + STRINGS → CAMERA ONLY</small></div><div className="trigger"><div className="trigger-title"><span>PHASE 6</span></div><p>Local geometry converts MediaPipe landmarks into simple expression and hand gesture states. Meme triggers remain disabled.</p><small>FACE + HAND → EXPRESSION / GESTURE</small></div>
+        <div className="trigger"><div className="trigger-title"><span>GOAT BOT</span><b>{goatBot ? 'VISUALIZER ON' : 'VISUALIZER OFF'}</b></div><p>Show the live face + hand landmarks as a thin local debug mesh.</p><small>DOTS + STRINGS → CAMERA ONLY</small></div><div className="trigger"><div className="trigger-title"><span>PHASE 7</span><b>LIVE MATCHING</b></div><p>The 10 built-in reactions now evaluate your local face and hand states in real time. No video is uploaded and no meme image is overlaid yet.</p><small>VISION → CONDITIONS → BEST MATCH</small></div>
         <label className="toggle"><span>SHOW MOCK MEME</span><input type="checkbox" checked={overlay} onChange={(event) => setOverlay(event.target.checked)}/><i/></label>
       </aside>
     </div>
