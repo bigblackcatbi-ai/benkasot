@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { memes } from '@/lib/memes'
 import type { Meme, MemeCondition } from '@/types/meme'
 import type { NormalizedLandmark } from '@mediapipe/tasks-vision'
@@ -148,19 +148,78 @@ export function useMemeTriggerEngine(
   enabled: boolean,
 ) {
   const [matches, setMatches] = useState<MemeMatch[]>([])
+  const candidateIdRef = useRef<string | null>(null)
+  const candidateCountRef = useRef(0)
+  const stableIdRef = useRef<string | null>(null)
+  const stableUntilRef = useRef(0)
+
   useEffect(() => {
     if (!enabled) {
       setMatches([])
+      candidateIdRef.current = null
+      candidateCountRef.current = 0
+      stableIdRef.current = null
+      stableUntilRef.current = 0
       return
     }
+
     const update = () => {
       const face = faceLandmarks.current[0]
       const hands = handLandmarks.current
-      setMatches(memes.filter(meme => meme.enabled).map(meme => matchMeme(meme, analysis, face, hands)).filter(match => match.score > 0).sort((a,b) => b.score - a.score))
+      const freshMatches = memes
+        .filter(meme => meme.enabled)
+        .map(meme => matchMeme(meme, analysis, face, hands))
+        .filter(match => match.score > 0)
+        .sort((a, b) => b.score - a.score)
+
+      const candidate = freshMatches[0] ?? null
+      const now = performance.now()
+
+      if (!candidate) {
+        // Keep a just-triggered meme visible briefly instead of dropping it
+        // on a single imperfect camera frame.
+        if (stableIdRef.current && now < stableUntilRef.current) return
+        stableIdRef.current = null
+        setMatches([])
+        candidateIdRef.current = null
+        candidateCountRef.current = 0
+        return
+      }
+
+      // Require the same winner for a few consecutive samples. This removes
+      // one-frame false positives without making the user hold a pose for long.
+      if (candidateIdRef.current === candidate.meme.id) {
+        candidateCountRef.current += 1
+      } else {
+        candidateIdRef.current = candidate.meme.id
+        candidateCountRef.current = 1
+      }
+
+      const isSameStable = stableIdRef.current === candidate.meme.id
+      const isStrongEnough = candidate.score >= 70
+      const confirmationNeeded = isStrongEnough ? 2 : 3
+
+      if (!isSameStable && candidateCountRef.current < confirmationNeeded) {
+        return
+      }
+
+      if (!isSameStable) {
+        stableIdRef.current = candidate.meme.id
+      }
+
+      // Hold the selected reaction for a short cooldown so tiny landmark
+      // changes don't make the UI flicker between memes.
+      stableUntilRef.current = now + 900
+
+      // Once stable, allow the other matches to update normally so the panel
+      // remains useful while the winner is held.
+      setMatches(freshMatches)
     }
+
     update()
-    const interval = window.setInterval(update, 150)
+    const interval = window.setInterval(update, 120)
     return () => window.clearInterval(interval)
   }, [analysis, enabled, faceLandmarks, handLandmarks])
+
   return { matches, topMatch: matches[0] ?? null }
 }
