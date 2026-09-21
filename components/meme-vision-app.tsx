@@ -494,7 +494,7 @@ function CreateMemePage() {
       const feature: MemeCondition['feature'] = ['squinting', 'wide', 'eyes-closed', 'wink-left', 'wink-right'].includes(value)
         ? 'eyes'
         : ['open', 'closed', 'frown'].includes(value) ? 'mouth'
-        : ['upward', 'right'].includes(value) ? 'gaze' : 'expression'
+        : ['upward', 'downward', 'left', 'right'].includes(value) ? 'gaze' : 'expression'
       return { feature, category: 'face', value, required: false }
     }
     if (value === 'hands-on-head' || value === 'both-hands-near-head' || value === 'hand-on-head' || value === 'fist') {
