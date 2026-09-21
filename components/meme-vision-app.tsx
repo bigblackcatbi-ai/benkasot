@@ -476,10 +476,43 @@ function CreateMemePage() {
     }
 
     const conditions = selectedConditions.map(buildCondition)
-    const summary = selectedConditions.map((value) => value.replaceAll('-', ' ')).join(' + ')
+    const normalizedName = name.trim().toUpperCase()
+    const existingMemes = getAllMemes().filter(meme => meme.id !== editId)
+
+    const duplicateName = existingMemes.some(meme => meme.name.trim().toUpperCase() === normalizedName)
+    if (duplicateName) {
+      setError('STOP: A meme with this name already exists. Use a different name or edit the existing meme.')
+      return
+    }
+
+    const triggerKey = conditions
+      .map(condition => `${condition.feature}:${condition.value}`)
+      .sort()
+      .join('|')
+    const duplicateTrigger = existingMemes.find(meme => meme.trigger.conditions
+      .filter(condition => condition.enabled !== false)
+      .map(condition => `${condition.feature}:${condition.value}`)
+      .sort()
+      .join('|') === triggerKey)
+
+    if (duplicateTrigger) {
+      setError(`STOP: These trigger conditions already belong to "${duplicateTrigger.name}". Change the conditions or edit that meme instead.`)
+      return
+    }
+
+    const groups = new Map<string, string[]>()
+    conditions.forEach(condition => {
+      const labels = groups.get(condition.feature) ?? []
+      labels.push(condition.value.replaceAll('-', ' '))
+      groups.set(condition.feature, labels)
+    })
+    const summary = [...groups.values()]
+      .map(values => values.length > 1 ? `(${values.join(' OR ')})` : values[0])
+      .join(' + ')
+
     const meme: Meme = {
       id: editId ?? `custom-${Date.now()}`,
-      name: name.trim().toUpperCase(),
+      name: normalizedName,
       shortLabel: name.trim().toUpperCase(),
       description: `Custom reaction triggered by ${summary}.`,
       triggerSummary: `When: ${summary}`,
@@ -543,7 +576,7 @@ function CreateMemePage() {
         <div className="condition-grid">
           {visibleOptions.map((option) => <button key={option.value} className={selectedConditions.includes(option.value) ? 'condition-chip active' : 'condition-chip'} onClick={() => toggleCondition(option.value)}>{selectedConditions.includes(option.value) ? '✓ ' : ''}{option.label}</button>)}
         </div>
-        <div className="custom-note-inline">Select multiple conditions. In combined mode you can mix FACE + HAND. Matching uses the same soft scoring system as the built-in memes.</div>
+        <div className="custom-note-inline">Same-feature conditions are alternatives (OR). Different features combine together. Example: HAPPY + SAD + OPEN MOUTH means (HAPPY OR SAD) + OPEN MOUTH. Duplicate names and trigger sets are blocked.</div>
         <div className="custom-actions">
           <Button accent="pink" onClick={saveMeme}><Zap size={16}/> {saved ? 'SAVED TO SESSION' : editId ? 'UPDATE MEME' : 'SAVE CUSTOM MEME'}</Button>
           {saved && <Link href="/camera" className="brutal-btn white">TEST IN CAMERA →</Link>}
