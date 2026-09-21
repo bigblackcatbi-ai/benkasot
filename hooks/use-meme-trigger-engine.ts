@@ -241,56 +241,33 @@ export function useMemeTriggerEngine(
         lockRemainingMs: Math.max(0, stableUntilRef.current - now),
       })
 
-      // Keep the current winner locked unless a clearly stronger reaction appears.
-      if (stableIdRef.current) {
-        const stableMatch = freshMatches.find(match => match.meme.id === stableIdRef.current)
-
-        if (now < stableUntilRef.current) {
-          if (!candidate || candidate.meme.id !== stableIdRef.current) {
-            if (!candidate || candidate.score < stableScoreRef.current + TAKEOVER_MARGIN || candidate.score < TAKEOVER_SCORE) {
-              if (stableMatch) setMatches([stableMatch, ...freshMatches.filter(match => match.meme.id !== stableIdRef.current)])
-              return
-            }
-          }
-        }
-
-        if (!candidate) {
-          if (now < stableUntilRef.current && stableMatch) {
-            setMatches([stableMatch])
-            return
-          }
-          stableIdRef.current = null
-          stableScoreRef.current = 0
-        } else if (candidate.meme.id !== stableIdRef.current) {
-          const clearlyStronger = candidate.score >= Math.max(TAKEOVER_SCORE, stableScoreRef.current + TAKEOVER_MARGIN)
-          if (!clearlyStronger && now < stableUntilRef.current) {
-            if (stableMatch) setMatches([stableMatch, ...freshMatches.filter(match => match.meme.id !== stableIdRef.current)])
-            return
-          }
-          stableIdRef.current = null
-          stableScoreRef.current = 0
-          candidateIdRef.current = null
-          candidateCountRef.current = 0
-        }
-      }
-
+      // The overlay follows the current face state immediately.
+      // No stale winner lock: neutral/no-match removes it, and a new reaction
+      // can replace the previous meme on the next detection tick.
       if (!candidate) {
-        if (stableIdRef.current && now < stableUntilRef.current) return
         setMatches([])
+        stableIdRef.current = null
+        stableScoreRef.current = 0
+        stableUntilRef.current = 0
         candidateIdRef.current = null
         candidateCountRef.current = 0
         return
       }
 
-      if (candidateIdRef.current === candidate.meme.id) {
-        candidateCountRef.current += 1
-      } else {
+      if (candidateIdRef.current !== candidate.meme.id) {
         candidateIdRef.current = candidate.meme.id
         candidateCountRef.current = 1
-      }
 
-      if (candidateIdRef.current !== stableIdRef.current && candidateCountRef.current < confirmationNeeded) {
-        return
+        // Switching reactions should be immediate.
+        if (stableIdRef.current && stableIdRef.current !== candidate.meme.id) {
+          stableIdRef.current = candidate.meme.id
+          stableScoreRef.current = candidate.score
+          stableUntilRef.current = 0
+          setMatches(freshMatches)
+          return
+        }
+      } else {
+        candidateCountRef.current += 1
       }
 
       stableIdRef.current = candidate.meme.id
