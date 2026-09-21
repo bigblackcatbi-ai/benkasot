@@ -379,7 +379,7 @@ function CreateMemePage() {
       'squinting', 'wide', 'open', 'closed', 'upward', 'right',
     ])
     if (faceValues.has(value)) {
-      const feature = ['squinting', 'wide', 'open', 'closed'].includes(value)
+      const feature: MemeCondition['feature'] = ['squinting', 'wide', 'open', 'closed'].includes(value)
         ? value === 'squinting' || value === 'wide' ? 'eyes' : 'mouth'
         : ['upward', 'right'].includes(value) ? 'gaze' : 'expression'
       return { feature, category: 'face', value, required: false }
