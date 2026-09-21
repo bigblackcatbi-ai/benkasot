@@ -238,6 +238,24 @@ export const memes: readonly Meme[] = [
   },
 ]
 
+
+let customMemes: Meme[] = []
+let deletedMemeIds = new Set<string>()
+
+export function getAllMemes(): Meme[] {
+  const overriddenIds = new Set(customMemes.map((meme) => meme.id))
+  return [...memes.filter((meme) => !overriddenIds.has(meme.id) && !deletedMemeIds.has(meme.id)), ...customMemes.filter((meme) => !deletedMemeIds.has(meme.id))]
+}
+
+export function addCustomMeme(meme: Meme): void {
+  customMemes = [...customMemes.filter((item) => item.id !== meme.id), meme]
+}
+
+export function deleteMeme(id: string): void {
+  deletedMemeIds = new Set(deletedMemeIds).add(id)
+  customMemes = customMemes.filter((item) => item.id !== id)
+}
+
 export function getMemeById(id: string): Meme | undefined {
-  return memes.find((meme) => meme.id === id)
+  return getAllMemes().find((meme) => meme.id === id)
 }
