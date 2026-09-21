@@ -17,6 +17,7 @@ export type MemeConditionValue =
   | 'squinting'
   | 'wide'
   | 'closed'
+  | 'eyes-closed'
   | 'wink-left'
   | 'wink-right'
   | 'neutral'
