@@ -139,14 +139,8 @@ function matchMeme(
   // Different features are combined (soft AND).
   // Example: Happy + Sad + Open Mouth means:
   // (Happy OR Sad) AND Open Mouth.
-  const groups = Array.from(new Map(
-    conditions.map(condition => [condition.feature, [] as MemeCondition[]]),
-  ).values())
-
-  conditions.forEach(condition => {
-    const group = groups.find(item => item[0]?.feature === condition.feature)
-    if (group && !group.some(item => item.value === condition.value)) group.push(condition)
-  })
+  const groups = [...new Set(conditions.map(condition => condition.feature))]
+    .map(feature => conditions.filter(condition => condition.feature === feature))
 
   const groupResults = groups.map(group => {
     const matched = group.filter(condition => conditionMatches(condition, analysis, face, hands))
