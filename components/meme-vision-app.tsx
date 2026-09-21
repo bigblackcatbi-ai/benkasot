@@ -33,6 +33,13 @@ function Shell({ children }: { children: React.ReactNode }) {
 function Sticker({ children, color = 'yellow' }: { children: React.ReactNode; color?: string }) { return <span className={`sticker ${color}`}>{children}</span> }
 function Placeholder({ label = 'MEME PREVIEW', color = 'yellow' }: { label?: string; color?: string }) { return <div className={`meme-placeholder ${color}`}><span>{label}</span><b>IMG</b></div> }
 
+function MemePreview({ meme, index = 0 }: { meme: Meme; index?: number }) {
+  if (meme.source === 'custom' && meme.imagePath) {
+    return <div className={`meme-preview-image ${meme.accentColor}`}><img src={meme.imagePath} alt={meme.name} /></div>
+  }
+  return <Placeholder label={index % 3 === 1 ? '!!!' : meme.shortLabel} color={meme.accentColor} />
+}
+
 function Home() {
   return <Shell><main>
     <section className="hero page-pad"><div className="hero-copy"><Sticker>VISION ONLINE ●</Sticker><h1>MAKE A FACE.<br /><em>GET A MEME.</em></h1><p className="hero-sub">Your webcam watches the chaos. Your expressions trigger the reaction.</p><div className="hero-actions"><Link href="/camera" className="brutal-btn pink">OPEN CAMERA <ChevronRight size={18}/></Link><Link href="/memes" className="brutal-btn white">EXPLORE MEMES</Link></div><div className="badges"><Sticker color="mint">BROWSER-BASED</Sticker><Sticker color="blue">REAL-TIME</Sticker><Sticker color="orange">NO VIDEO UPLOAD</Sticker></div></div><div className="hero-device"><div className="device-top"><span><i className="live-dot"/> CAMERA LIVE</span><span>FPS 30</span></div><div className="fake-camera"><div className="face-grid"><span className="face-shape"/><span className="eye e1"/><span className="eye e2"/><span className="mouth"/></div><div className="ar-sticker">SHOCKED<br /><small>91% MATCH</small></div><span className="hud hud-a">FACE DETECTED</span><span className="hud hud-b">HANDS: 2</span><span className="hud hud-c">MEME LOCKED.</span></div><div className="device-bottom"><span>EXPRESSION: SURPRISED</span><span>LOCAL PROCESSING</span></div></div></section>
@@ -44,7 +51,7 @@ function Home() {
 
 function MemeCard({ meme, index = 0, onDelete }: { meme: Meme; index?: number; onDelete?: (id: string) => void }) {
   return <article className="meme-card">
-    <Placeholder label={index % 3 === 1 ? '!!!' : meme.shortLabel} color={meme.accentColor}/>
+    <MemePreview meme={meme} index={index}/>
     <div className="meme-card-body">
       <div className="card-kicker"><span className={`dot ${meme.accentColor}`} /> {meme.typeLabel}</div>
       <h3>{meme.name}</h3>
@@ -327,6 +334,10 @@ function CameraPage() {
 }
 function LibraryPage() {
   const [allMemes, setAllMemes] = useState(getAllMemes())
+
+  useEffect(() => {
+    setAllMemes(getAllMemes())
+  }, [])
 
   const handleDelete = (id: string) => {
     const meme = getAllMemes().find((item) => item.id === id)
