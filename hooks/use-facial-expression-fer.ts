@@ -4,10 +4,9 @@ import { useEffect, useRef, useState } from 'react'
 import { pipeline } from '@huggingface/transformers'
 import type { NormalizedLandmark } from '@mediapipe/tasks-vision'
 
-export type FerEmotion = 'angry' | 'disgust' | 'fear' | 'happy' | 'neutral' | 'sad' | 'surprise'
+export type FerEmotion = 'disgust' | 'fear' | 'happy' | 'neutral' | 'sad' | 'surprise'
 
 export interface FerProbabilities {
-  angry: number
   disgust: number
   fear: number
   happy: number
@@ -31,10 +30,10 @@ const EMA_ALPHA = 0.35
 const SWITCH_MARGIN = 0.08
 const SWITCH_CONFIRM_MS = 300
 const INFERENCE_INTERVAL_MS = 120
-const EMOTIONS: FerEmotion[] = ['angry', 'disgust', 'fear', 'happy', 'neutral', 'sad', 'surprise']
+const EMOTIONS: FerEmotion[] = ['disgust', 'fear', 'happy', 'neutral', 'sad', 'surprise']
 
 const emptyProbabilities = (): FerProbabilities => ({
-  angry: 0, disgust: 0, fear: 0, happy: 0, neutral: 0, sad: 0, surprise: 0,
+disgust: 0, fear: 0, happy: 0, neutral: 0, sad: 0, surprise: 0,
 })
 
 const clamp01 = (value: number) => Math.max(0, Math.min(1, value))
