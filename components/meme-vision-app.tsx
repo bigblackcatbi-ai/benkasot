@@ -4,8 +4,8 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useEffect, useRef, useState } from 'react'
 import { Camera, ChevronRight, Cpu, History, ImagePlus, LayoutGrid, Mic, Pause, Play, Plus, RotateCcw, Settings, Sparkles, SlidersHorizontal, Video, Zap } from 'lucide-react'
-import { memes } from '@/lib/memes'
-import type { Meme } from '@/types/meme'
+import { addCustomMeme, memes } from '@/lib/memes'
+import type { Meme, MemeCondition, MemeConditionValue } from '@/types/meme'
 import { useCamera } from '@/hooks/use-camera'
 import { useFaceLandmarker } from '@/hooks/use-face-landmarker'
 import { useHandLandmarker } from '@/hooks/use-hand-landmarker'
@@ -308,11 +308,154 @@ function CameraPage() {
 }
 function LibraryPage() { return <Shell><main className="page-pad content-page"><div className="page-title"><Sticker color="yellow">THE REACTION BANK</Sticker><h1>MEME LIBRARY</h1><p>10 reactions ready to destroy your camera.</p></div><div className="library-tools"><div className="search">⌕ <input placeholder="SEARCH MEMES..." /></div>{['FACE','HAND','MOVEMENT','ACTIVE'].map(x=><Button accent="white" key={x}>{x}</Button>)}<Button accent="black"><SlidersHorizontal size={16}/> SORT</Button></div><div className="meme-grid">{memes.map((m,i)=><MemeCard meme={m} index={i} key={m.name}/>)}<Link href="/memes/create" className="create-card"><Plus size={28}/><strong>CREATE NEW MEME</strong><span>Build a reaction from scratch →</span></Link></div></main></Shell> }
 
+function CreateMemePage() {
+  const [name, setName] = useState('')
+  const [imagePath, setImagePath] = useState<string | null>(null)
+  const [imageName, setImageName] = useState('')
+  const [mode, setMode] = useState<'expression' | 'gesture' | 'combined'>('expression')
+  const [conditionValue, setConditionValue] = useState<MemeConditionValue>('smiling')
+  const [saved, setSaved] = useState(false)
+  const [error, setError] = useState('')
+
+  const conditionOptions: Array<{ value: MemeConditionValue; label: string; mode: typeof mode }> = [
+    { value: 'smiling', label: 'SMILE', mode: 'expression' },
+    { value: 'excited', label: 'EXCITED', mode: 'expression' },
+    { value: 'crying', label: 'CRYING', mode: 'expression' },
+    { value: 'fist', label: 'FIST', mode: 'gesture' },
+    { value: 'index-finger-near-mouth', label: 'FINGER NEAR MOUTH', mode: 'gesture' },
+    { value: 'index-finger-near-head', label: 'FINGER NEAR HEAD', mode: 'gesture' },
+    { value: 'hands-on-head', label: 'HAND ON HEAD', mode: 'gesture' },
+  ]
+
+  const visibleOptions = conditionOptions.filter((option) => mode === 'combined' || option.mode === mode)
+
+  useEffect(() => {
+    if (!visibleOptions.some((option) => option.value === conditionValue)) {
+      setConditionValue(visibleOptions[0]?.value ?? 'smiling')
+    }
+  }, [mode])
+
+  const handleImage = (file: File | undefined) => {
+    if (!file) return
+    setError('')
+    setSaved(false)
+    if (!file.type.startsWith('image/')) {
+      setError('Choose a PNG, JPG, WEBP, or GIF image.')
+      return
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      setError('Keep the meme image under 5 MB.')
+      return
+    }
+    const reader = new FileReader()
+    reader.onload = () => {
+      setImagePath(typeof reader.result === 'string' ? reader.result : null)
+      setImageName(file.name)
+    }
+    reader.onerror = () => setError('Could not read that image.')
+    reader.readAsDataURL(file)
+  }
+
+  const buildCondition = (value: MemeConditionValue): MemeCondition => {
+    if (value === 'smiling' || value === 'excited' || value === 'crying') {
+      return { feature: 'expression', category: 'face', value, required: true }
+    }
+    if (value === 'fist' || value === 'hands-on-head') {
+      return { feature: 'hands', category: 'hand', value, required: true }
+    }
+    return { feature: 'finger', category: 'hand', value, required: true }
+  }
+
+  const saveMeme = () => {
+    if (!name.trim() || !imagePath) {
+      setError('Add a meme image and name before saving.')
+      return
+    }
+
+    const condition = buildCondition(conditionValue)
+    const meme: Meme = {
+      id: `custom-${Date.now()}`,
+      name: name.trim().toUpperCase(),
+      shortLabel: name.trim().toUpperCase(),
+      description: `Custom reaction triggered by ${conditionValue.replaceAll('-', ' ')}.`,
+      triggerSummary: `When: ${conditionValue.replaceAll('-', ' ')}`,
+      typeLabel: mode === 'combined' ? 'FACE + HAND' : mode === 'gesture' ? 'HAND' : 'FACE',
+      imagePath,
+      category: mode === 'combined' ? 'combination' : mode === 'gesture' ? 'hand' : 'face',
+      enabled: true,
+      source: 'custom',
+      accentColor: 'pink',
+      mockConfidence: 92,
+      trigger: { type: mode === 'combined' ? 'combined' : mode, conditions: [condition] },
+      overlay: {
+        anchor: 'face',
+        scale: 1,
+        rotation: 0,
+        offsetX: 0,
+        offsetY: -12,
+        opacity: 1,
+        duration: 900,
+        animation: 'pop',
+      },
+    }
+
+    addCustomMeme(meme)
+    setSaved(true)
+    setError('')
+  }
+
+  return <Shell><main className="page-pad content-page create-meme-page">
+    <div className="page-title">
+      <Sticker color="pink">PHASE 10 / CUSTOM BUILDER</Sticker>
+      <h1>MAKE YOUR<br /><em>OWN MEME.</em></h1>
+      <p>Upload the reaction. Pick what should trigger it. Save it to this browser session.</p>
+    </div>
+
+    <div className="custom-builder">
+      <section className="big-panel">
+        <div className="panel-heading"><span>01 // MEME IMAGE</span><ImagePlus size={17}/></div>
+        <label className="custom-upload">
+          {imagePath ? <img src={imagePath} alt="Custom meme preview" /> : <div className="custom-upload-empty"><ImagePlus size={36}/><strong>DROP YOUR MEME</strong><span>PNG · JPG · WEBP · GIF · MAX 5 MB</span></div>}
+          <input type="file" accept="image/png,image/jpeg,image/webp,image/gif" onChange={(event) => handleImage(event.target.files?.[0])} />
+        </label>
+        {imageName && <div className="file-name">LOADED // {imageName}</div>}
+      </section>
+
+      <section className="big-panel">
+        <div className="panel-heading"><span>02 // NAME IT</span><span>REQUIRED</span></div>
+        <input className="custom-input" value={name} onChange={(event) => { setName(event.target.value); setSaved(false) }} placeholder="E.G. BRO WHAT" maxLength={32} />
+        <div className="panel-heading custom-heading"><span>03 // TRIGGER MODE</span><span>ONE PRIMARY SIGNAL</span></div>
+        <div className="mode-grid">
+          {[
+            ['expression', 'FACE', 'Smile / excited / crying'],
+            ['gesture', 'HAND', 'Fist / finger / hand'],
+            ['combined', 'FACE + HAND', 'Builds a combined trigger'],
+          ].map(([value, label, description]) => <button key={value} className={mode === value ? 'mode-card active' : 'mode-card'} onClick={() => { setMode(value as typeof mode); setSaved(false) }}><strong>{label}</strong><span>{description}</span></button>)}
+        </div>
+        <div className="panel-heading custom-heading"><span>04 // CONDITION</span><span>{conditionValue.replaceAll('-', ' ').toUpperCase()}</span></div>
+        <div className="condition-grid">
+          {visibleOptions.map((option) => <button key={option.value} className={conditionValue === option.value ? 'condition-chip active' : 'condition-chip'} onClick={() => { setConditionValue(option.value); setSaved(false) }}>{option.label}</button>)}
+        </div>
+        <div className="custom-actions">
+          <Button accent="pink" onClick={saveMeme}><Zap size={16}/> {saved ? 'SAVED TO SESSION' : 'SAVE CUSTOM MEME'}</Button>
+          {saved && <Link href="/camera" className="brutal-btn white">TEST IN CAMERA →</Link>}
+        </div>
+        {error && <div className="custom-error">{error}</div>}
+      </section>
+    </div>
+
+    <div className="custom-note">
+      <Sticker color="yellow">PHASE 10 NOTE</Sticker>
+      <p>Custom memes are kept in memory for this browser session. Nothing is uploaded to a server and nothing is permanently stored yet. Persistent storage arrives in Phase 12.</p>
+    </div>
+  </main></Shell>
+}
+
 function GenericPage({ kind }: { kind: string }) { const config: Record<string,[string,string,string]> = { create:['CREATE YOUR OWN REACTION','Build a trigger that feels like you.','UPLOAD → CONDITION → TEST → SAVE'], learn:['TEACH IT A NEW REACTION','Show the camera what your reaction looks like.','RECORD → ANALYZE → PROFILE'], history:['REACTION HISTORY','The receipts. Nothing more, nothing less.','LOCAL LOG / VIDEO NOT STORED'], settings:['SETTINGS','Tune the machine to your particular brand of chaos.','PREFERENCES / DEBUG / PRIVACY'], about:['HOW IT WORKS','Sophisticated computer vision. Extremely unserious output.','CAMERA → VISION → MATCH → REACT'] }; const [title, sub, kicker] = config[kind] || config.about; return <Shell><main className="page-pad content-page generic"><div className="page-title"><Sticker color={kind==='settings'?'blue':'pink'}>{kicker}</Sticker><h1>{title}</h1><p>{sub}</p></div><div className="generic-layout"><section className="big-panel"><div className="panel-heading"><span>{kind === 'about' ? 'SYSTEM DIAGRAM' : kind.toUpperCase() + ' WORKSPACE'}</span><Cpu size={17}/></div>{kind === 'create' && <><div className="upload-box"><ImagePlus size={32}/><h2>DROP A MEME HERE</h2><p>PNG · JPG · WEBP · GIF</p><Button accent="pink">CHOOSE FILE</Button></div><div className="builder-row"><span>WHEN</span><Sticker color="yellow">FACE</Sticker><Plus/><Sticker color="blue">HAND</Sticker><Plus/><Sticker color="mint">MOVEMENT</Sticker></div></>}{kind === 'learn' && <><div className="training-preview"><div className="training-face">READY?</div><span>CAMERA PREVIEW // HOLD YOUR REACTION FOR 3 SECONDS</span></div><div className="countdown"><b>03</b><span>GET READY</span><Button accent="pink">START RECORDING</Button></div></>}{kind === 'history' && <HistoryRows/>}{kind === 'settings' && <SettingsRows/>}{kind === 'about' && <AboutDiagram/>}</section><aside className="side-note"><Sticker color="yellow">STATUS</Sticker><h2>VISION ONLINE.</h2><p>Everything here is a demo state, ready for MediaPipe to take over in VS Code.</p><Button accent="black">OPEN CAMERA <ChevronRight size={15}/></Button></aside></div></main></Shell> }
 function HistoryRows(){return <div className="history-rows">{[['11:42:12','SHOCKED','91%'],['11:40:03','JUDGING PEOPLE','84%'],['11:37:48','YESSS','88%'],['11:21:19','THINKING','79%']].map(r=><div className="history-row" key={r[0]}><span>{r[0]}</span><strong>{r[1]}</strong><b>{r[2]}</b><ChevronRight size={15}/></div>)}</div>}
 function SettingsRows(){return <div className="settings-rows">{['CAMERA','AUDIO','DETECTION','OVERLAY','PRIVACY','PERFORMANCE','APPEARANCE'].map((x,i)=><div className="settings-row" key={x}><span>{x}</span><b>{i===4?'LOCAL PROCESSING ENABLED':'CONFIGURE'}</b><ChevronRight size={16}/></div>)}</div>}
 function AboutDiagram(){return <div className="diagram">{['CAMERA','VISION ENGINE','FACE + HAND LANDMARKS','EXPRESSION / GESTURE','MEME MATCHER','AR OVERLAY'].map((x,i)=><div key={x}><strong>{x}</strong>{i<5 && <ChevronRight/>}</div>)}</div>}
 
-export default function MemeVisionApp(){ const path=usePathname(); if(path==='/') return <Home/>; if(path==='/camera') return <CameraPage/>; if(path==='/memes') return <LibraryPage/>; if(path==='/memes/create') return <GenericPage kind="create"/>; if(path==='/learn') return <GenericPage kind="learn"/>; if(path==='/history') return <GenericPage kind="history"/>; if(path==='/settings') return <GenericPage kind="settings"/>; return <GenericPage kind="about"/> }
+export default function MemeVisionApp(){ const path=usePathname(); if(path==='/') return <Home/>; if(path==='/camera') return <CameraPage/>; if(path==='/memes') return <LibraryPage/>; if(path==='/memes/create') return <CreateMemePage/>; if(path==='/learn') return <GenericPage kind="learn"/>; if(path==='/history') return <GenericPage kind="history"/>; if(path==='/settings') return <GenericPage kind="settings"/>; return <GenericPage kind="about"/> }
 
 export { Button, Logo, Shell, MemeCard, memes }
