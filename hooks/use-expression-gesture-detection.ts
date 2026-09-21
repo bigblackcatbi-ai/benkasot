@@ -222,6 +222,30 @@ export function useExpressionGestureDetection(
     head: 'NO FACE',
     headCount: 0,
   })
+  const handGestureRef = useRef<HandGestureState[]>([])
+  const pendingHandRef = useRef<Array<{ gesture: HandGesture; count: number }>>([])
+
+  const smoothHandGestures = (raw: HandGestureState[]) => {
+    const result = raw.map((hand, index) => {
+      const previous = handGestureRef.current[index]
+      const pending = pendingHandRef.current[index] ?? { gesture: hand.gesture, count: 0 }
+
+      if (hand.gesture === pending.gesture) pending.count += 1
+      else {
+        pending.gesture = hand.gesture
+        pending.count = 1
+      }
+
+      pendingHandRef.current[index] = pending
+
+      if (!previous || pending.count >= 2) return hand
+      return previous
+    })
+
+    handGestureRef.current = result
+    pendingHandRef.current.length = result.length
+    return result
+  }
 
   useEffect(() => {
     if (!enabled) {
@@ -237,6 +261,8 @@ export function useExpressionGestureDetection(
         head: 'NO FACE',
         headCount: 0,
       }
+      handGestureRef.current = []
+      pendingHandRef.current = []
       return
     }
 
@@ -245,12 +271,13 @@ export function useExpressionGestureDetection(
       const faceState = smoothFaceState(rawFaceState, previousFaceRef.current, pendingFaceRef.current)
       previousFaceRef.current = faceState
 
-      const handGestures = handLandmarks.current.map((hand, index) => ({
+      const rawHandGestures = handLandmarks.current.map((hand, index) => ({
         handedness: handedness.current[index] === 'Left' || handedness.current[index] === 'Right'
           ? handedness.current[index] as 'Left' | 'Right'
           : 'Hand',
         gesture: analyzeHand(hand),
       }))
+      const handGestures = smoothHandGestures(rawHandGestures)
 
       setState({ ...faceState, handGestures })
     }
