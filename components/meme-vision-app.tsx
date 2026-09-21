@@ -313,57 +313,84 @@ function CreateMemePage() {
   const [imagePath, setImagePath] = useState<string | null>(null)
   const [imageName, setImageName] = useState('')
   const [mode, setMode] = useState<'expression' | 'gesture' | 'combined'>('expression')
-  const [conditionValue, setConditionValue] = useState<MemeConditionValue>('smiling')
+  const [selectedConditions, setSelectedConditions] = useState<MemeConditionValue[]>(['smiling'])
   const [saved, setSaved] = useState(false)
   const [error, setError] = useState('')
 
-  const conditionOptions: Array<{ value: MemeConditionValue; label: string; mode: typeof mode }> = [
-    { value: 'smiling', label: 'SMILE', mode: 'expression' },
-    { value: 'excited', label: 'EXCITED', mode: 'expression' },
-    { value: 'crying', label: 'CRYING', mode: 'expression' },
-    { value: 'fist', label: 'FIST', mode: 'gesture' },
-    { value: 'index-finger-near-mouth', label: 'FINGER NEAR MOUTH', mode: 'gesture' },
-    { value: 'index-finger-near-head', label: 'FINGER NEAR HEAD', mode: 'gesture' },
-    { value: 'hands-on-head', label: 'HAND ON HEAD', mode: 'gesture' },
+  const faceOptions: Array<{ value: MemeConditionValue; label: string }> = [
+    { value: 'smiling', label: 'SMILE' },
+    { value: 'excited', label: 'EXCITED' },
+    { value: 'crying', label: 'CRYING' },
+    { value: 'happy', label: 'HAPPY' },
+    { value: 'sad', label: 'SAD' },
+    { value: 'angry', label: 'ANGRY' },
+    { value: 'smirk', label: 'SMIRK' },
+    { value: 'squinting', label: 'SQUINT EYES' },
+    { value: 'wide', label: 'WIDE EYES' },
+    { value: 'open', label: 'MOUTH OPEN' },
+    { value: 'closed', label: 'MOUTH CLOSED' },
+    { value: 'upward', label: 'LOOK UP' },
+    { value: 'right', label: 'LOOK RIGHT' },
   ]
 
-  const visibleOptions = conditionOptions.filter((option) => mode === 'combined' || option.mode === mode)
+  const handOptions: Array<{ value: MemeConditionValue; label: string }> = [
+    { value: 'hands-on-head', label: 'HANDS ON HEAD' },
+    { value: 'both-hands-near-head', label: 'BOTH HANDS NEAR HEAD' },
+    { value: 'hand-on-head', label: 'HAND ON HEAD' },
+    { value: 'fist', label: 'FIST' },
+    { value: 'open-palm', label: 'OPEN PALM' },
+    { value: 'thumbs-up', label: 'THUMBS UP' },
+    { value: 'thumbs-down', label: 'THUMBS DOWN' },
+    { value: 'pointing', label: 'POINTING' },
+    { value: 'peace', label: 'PEACE' },
+    { value: 'three-fingers', label: 'THREE FINGERS' },
+    { value: 'four-fingers', label: 'FOUR FINGERS' },
+    { value: 'ok', label: 'OK' },
+    { value: 'rock', label: 'ROCK' },
+    { value: 'pinch', label: 'PINCH' },
+    { value: 'finger-gun', label: 'FINGER GUN' },
+    { value: 'index-finger-near-mouth', label: 'FINGER NEAR MOUTH' },
+    { value: 'index-finger-near-head', label: 'FINGER NEAR HEAD' },
+    { value: 'index-finger-to-chest', label: 'FINGER TO CHEST' },
+  ]
 
-  useEffect(() => {
-    if (!visibleOptions.some((option) => option.value === conditionValue)) {
-      setConditionValue(visibleOptions[0]?.value ?? 'smiling')
-    }
-  }, [mode])
+  const visibleOptions = mode === 'expression'
+    ? faceOptions
+    : mode === 'gesture'
+      ? handOptions
+      : [...faceOptions, ...handOptions]
 
-  const handleImage = (file: File | undefined) => {
-    if (!file) return
-    setError('')
+  const toggleCondition = (value: MemeConditionValue) => {
+    setSelectedConditions((current) => current.includes(value)
+      ? current.filter((item) => item !== value)
+      : [...current, value])
     setSaved(false)
-    if (!file.type.startsWith('image/')) {
-      setError('Choose a PNG, JPG, WEBP, or GIF image.')
-      return
-    }
-    if (file.size > 5 * 1024 * 1024) {
-      setError('Keep the meme image under 5 MB.')
-      return
-    }
-    const reader = new FileReader()
-    reader.onload = () => {
-      setImagePath(typeof reader.result === 'string' ? reader.result : null)
-      setImageName(file.name)
-    }
-    reader.onerror = () => setError('Could not read that image.')
-    reader.readAsDataURL(file)
+  }
+
+  const handleModeChange = (nextMode: typeof mode) => {
+    setMode(nextMode)
+    setSelectedConditions([])
+    setSaved(false)
   }
 
   const buildCondition = (value: MemeConditionValue): MemeCondition => {
-    if (value === 'smiling' || value === 'excited' || value === 'crying') {
-      return { feature: 'expression', category: 'face', value, required: true }
+    const faceValues = new Set<MemeConditionValue>([
+      'smiling', 'excited', 'crying', 'happy', 'sad', 'angry', 'smirk',
+      'squinting', 'wide', 'open', 'closed', 'upward', 'right',
+    ])
+    if (faceValues.has(value)) {
+      const feature = ['squinting', 'wide', 'open', 'closed'].includes(value)
+        ? value === 'squinting' || value === 'wide' ? 'eyes' : 'mouth'
+        : ['upward', 'right'].includes(value) ? 'gaze' : 'expression'
+      return { feature, category: 'face', value, required: false }
     }
-    if (value === 'fist' || value === 'hands-on-head') {
-      return { feature: 'hands', category: 'hand', value, required: true }
+    if (value === 'hands-on-head' || value === 'both-hands-near-head' || value === 'hand-on-head' || value === 'fist') {
+      return { feature: 'hands', category: 'hand', value, required: false }
     }
-    return { feature: 'finger', category: 'hand', value, required: true }
+    if (value.startsWith('index-finger')) {
+      return { feature: 'finger', category: 'hand', value, required: false }
+    }
+    return { feature: 'hands', category: 'hand', value, required: false }
   }
 
   const saveMeme = () => {
@@ -371,14 +398,19 @@ function CreateMemePage() {
       setError('Add a meme image and name before saving.')
       return
     }
+    if (!selectedConditions.length) {
+      setError('Choose at least one trigger condition.')
+      return
+    }
 
-    const condition = buildCondition(conditionValue)
+    const conditions = selectedConditions.map(buildCondition)
+    const summary = selectedConditions.map((value) => value.replaceAll('-', ' ')).join(' + ')
     const meme: Meme = {
       id: `custom-${Date.now()}`,
       name: name.trim().toUpperCase(),
       shortLabel: name.trim().toUpperCase(),
-      description: `Custom reaction triggered by ${conditionValue.replaceAll('-', ' ')}.`,
-      triggerSummary: `When: ${conditionValue.replaceAll('-', ' ')}`,
+      description: `Custom reaction triggered by ${summary}.`,
+      triggerSummary: `When: ${summary}`,
       typeLabel: mode === 'combined' ? 'FACE + HAND' : mode === 'gesture' ? 'HAND' : 'FACE',
       imagePath,
       category: mode === 'combined' ? 'combination' : mode === 'gesture' ? 'hand' : 'face',
@@ -386,7 +418,7 @@ function CreateMemePage() {
       source: 'custom',
       accentColor: 'pink',
       mockConfidence: 92,
-      trigger: { type: mode === 'combined' ? 'combined' : mode, conditions: [condition] },
+      trigger: { type: mode === 'combined' ? 'combined' : mode, conditions },
       overlay: {
         anchor: 'face',
         scale: 1,
@@ -408,7 +440,7 @@ function CreateMemePage() {
     <div className="page-title">
       <Sticker color="pink">PHASE 10 / CUSTOM BUILDER</Sticker>
       <h1>MAKE YOUR<br /><em>OWN MEME.</em></h1>
-      <p>Upload the reaction. Pick what should trigger it. Save it to this browser session.</p>
+      <p>Upload the reaction. Pick one or more signals. Combine face and hand conditions for precise reactions.</p>
     </div>
 
     <div className="custom-builder">
@@ -424,18 +456,22 @@ function CreateMemePage() {
       <section className="big-panel">
         <div className="panel-heading"><span>02 // NAME IT</span><span>REQUIRED</span></div>
         <input className="custom-input" value={name} onChange={(event) => { setName(event.target.value); setSaved(false) }} placeholder="E.G. BRO WHAT" maxLength={32} />
-        <div className="panel-heading custom-heading"><span>03 // TRIGGER MODE</span><span>ONE PRIMARY SIGNAL</span></div>
+        <div className="panel-heading custom-heading"><span>03 // TRIGGER MODE</span><span>SELECT ONE</span></div>
         <div className="mode-grid">
           {[
-            ['expression', 'FACE', 'Smile / excited / crying'],
-            ['gesture', 'HAND', 'Fist / finger / hand'],
-            ['combined', 'FACE + HAND', 'Builds a combined trigger'],
-          ].map(([value, label, description]) => <button key={value} className={mode === value ? 'mode-card active' : 'mode-card'} onClick={() => { setMode(value as typeof mode); setSaved(false) }}><strong>{label}</strong><span>{description}</span></button>)}
+            ['expression', 'FACE', 'Choose any face / gaze signals'],
+            ['gesture', 'HAND', 'Choose any hand gesture / pose'],
+            ['combined', 'FACE + HAND', 'Mix multiple face and hand signals'],
+          ].map(([value, label, description]) => <button key={value} className={mode === value ? 'mode-card active' : 'mode-card'} onClick={() => handleModeChange(value as typeof mode)}><strong>{label}</strong><span>{description}</span></button>)}
         </div>
-        <div className="panel-heading custom-heading"><span>04 // CONDITION</span><span>{conditionValue.replaceAll('-', ' ').toUpperCase()}</span></div>
+        <div className="panel-heading custom-heading">
+          <span>04 // CONDITIONS</span>
+          <span>{selectedConditions.length} SELECTED</span>
+        </div>
         <div className="condition-grid">
-          {visibleOptions.map((option) => <button key={option.value} className={conditionValue === option.value ? 'condition-chip active' : 'condition-chip'} onClick={() => { setConditionValue(option.value); setSaved(false) }}>{option.label}</button>)}
+          {visibleOptions.map((option) => <button key={option.value} className={selectedConditions.includes(option.value) ? 'condition-chip active' : 'condition-chip'} onClick={() => toggleCondition(option.value)}>{selectedConditions.includes(option.value) ? '✓ ' : ''}{option.label}</button>)}
         </div>
+        <p className="custom-note-inline">Select multiple conditions. In combined mode you can mix FACE + HAND. Matching uses the same soft scoring system as the built-in memes.</p>
         <div className="custom-actions">
           <Button accent="pink" onClick={saveMeme}><Zap size={16}/> {saved ? 'SAVED TO SESSION' : 'SAVE CUSTOM MEME'}</Button>
           {saved && <Link href="/camera" className="brutal-btn white">TEST IN CAMERA →</Link>}
