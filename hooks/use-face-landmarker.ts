@@ -23,6 +23,7 @@ export function useFaceLandmarker(videoRef: RefObject<HTMLVideoElement | null>, 
   const mountedRef = useRef(false)
   const lastTimestampRef = useRef(-1)
   const landmarksRef = useRef<NormalizedLandmark[][]>([])
+  const blendshapesRef = useRef<Array<Array<{ categoryName: string; score: number }>>>([])
 
   const [state, setState] = useState<FaceDetectionState>({
     status: 'idle',
@@ -58,6 +59,7 @@ export function useFaceLandmarker(videoRef: RefObject<HTMLVideoElement | null>, 
     if (!enabled) {
       dispose()
       landmarksRef.current = []
+      blendshapesRef.current = []
       setState({ status: 'idle', faceDetected: false, faceCount: 0, landmarkCount: 0 })
       return
     }
@@ -77,6 +79,7 @@ export function useFaceLandmarker(videoRef: RefObject<HTMLVideoElement | null>, 
           baseOptions: { modelAssetPath: MODEL_URL },
           runningMode: 'VIDEO',
           numFaces: 1,
+          outputFaceBlendshapes: true,
         })
 
         if (cancelled || !mountedRef.current || requestId !== requestIdRef.current) {
@@ -104,6 +107,12 @@ export function useFaceLandmarker(videoRef: RefObject<HTMLVideoElement | null>, 
 
             const result = currentLandmarker.detectForVideo(currentVideo, timestamp)
             landmarksRef.current = result.faceLandmarks
+            blendshapesRef.current = result.faceBlendshapes.map(classification =>
+              classification.categories.map(category => ({
+                categoryName: category.categoryName,
+                score: category.score,
+              })),
+            )
             const faceCount = result.faceLandmarks.length
             const landmarkCount = faceCount > 0 ? result.faceLandmarks[0].length : 0
 
@@ -147,5 +156,5 @@ export function useFaceLandmarker(videoRef: RefObject<HTMLVideoElement | null>, 
     }
   }, [dispose, enabled, videoRef])
 
-  return { ...state, landmarksRef }
+  return { ...state, landmarksRef, blendshapesRef }
 }
