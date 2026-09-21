@@ -4,7 +4,7 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useEffect, useRef, useState } from 'react'
 import { Camera, ChevronRight, Cpu, History, ImagePlus, LayoutGrid, Mic, Pause, Play, Plus, RotateCcw, Settings, Sparkles, SlidersHorizontal, Video, Zap } from 'lucide-react'
-import { addCustomMeme, getAllMemes, memes } from '@/lib/memes'
+import { addCustomMeme, deleteCustomMeme, getAllMemes, getMemeById, memes } from '@/lib/memes'
 import type { Meme, MemeCondition, MemeConditionValue } from '@/types/meme'
 import { useCamera } from '@/hooks/use-camera'
 import { useFaceLandmarker } from '@/hooks/use-face-landmarker'
@@ -39,7 +39,23 @@ function Home() {
   </main></Shell>
 }
 
-function MemeCard({ meme, index = 0 }: { meme: Meme; index?: number }) { return <article className="meme-card"><Placeholder label={index % 3 === 1 ? '!!!' : meme.shortLabel} color={meme.accentColor}/><div className="meme-card-body"><div className="card-kicker"><span className={`dot ${meme.accentColor}`} /> {meme.typeLabel}</div><h3>{meme.name}</h3><p>{meme.triggerSummary}</p><div className="card-footer"><span className="active-status">● {meme.enabled ? 'ACTIVE' : 'DISABLED'}</span><Link href={`/memes/${meme.id}`} className="small-link">EDIT →</Link></div></div></article> }
+function MemeCard({ meme, index = 0, onDelete }: { meme: Meme; index?: number; onDelete?: (id: string) => void }) {
+  return <article className="meme-card">
+    <Placeholder label={index % 3 === 1 ? '!!!' : meme.shortLabel} color={meme.accentColor}/>
+    <div className="meme-card-body">
+      <div className="card-kicker"><span className={`dot ${meme.accentColor}`} /> {meme.typeLabel}</div>
+      <h3>{meme.name}</h3>
+      <p>{meme.triggerSummary}</p>
+      <div className="card-footer">
+        <span className="active-status">● {meme.enabled ? 'ACTIVE' : 'DISABLED'}</span>
+        <div className="card-actions">
+          <Link href={`/memes/create?edit=${encodeURIComponent(meme.id)}`} className="small-link">EDIT →</Link>
+          {meme.source === 'custom' && onDelete && <button type="button" className="small-link delete-link" onClick={() => onDelete(meme.id)}>DELETE</button>}
+        </div>
+      </div>
+    </div>
+  </article>
+}
 
 function LandmarkOverlay({ enabled, video, faceLandmarks, handLandmarks }: { enabled: boolean; video: HTMLVideoElement | null; faceLandmarks: React.MutableRefObject<import('@mediapipe/tasks-vision').NormalizedLandmark[][]>; handLandmarks: React.MutableRefObject<import('@mediapipe/tasks-vision').NormalizedLandmark[][]> }) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
@@ -306,7 +322,19 @@ function CameraPage() {
     </div>
   </main></Shell>
 }
-function LibraryPage() { const allMemes = getAllMemes(); return <Shell><main className="page-pad content-page"><div className="page-title"><Sticker color="yellow">THE REACTION BANK</Sticker><h1>MEME LIBRARY</h1><p>{allMemes.length} reactions ready to destroy your camera.</p></div><div className="library-tools"><div className="search">⌕ <input placeholder="SEARCH MEMES..." /></div>{['FACE','HAND','MOVEMENT','ACTIVE'].map(x=><Button accent="white" key={x}>{x}</Button>)}<Button accent="black"><SlidersHorizontal size={16}/> SORT</Button></div><div className="meme-grid">{allMemes.map((m,i)=><MemeCard meme={m} index={i} key={m.name}/>)}<Link href="/memes/create" className="create-card"><Plus size={28}/><strong>CREATE NEW MEME</strong><span>Build a reaction from scratch →</span></Link></div></main></Shell> }
+function LibraryPage() {
+  const [allMemes, setAllMemes] = useState(getAllMemes())
+
+  const handleDelete = (id: string) => {
+    const meme = getAllMemes().find((item) => item.id === id)
+    if (!meme || meme.source !== 'custom') return
+    if (!window.confirm(`Delete "${meme.name}"?`)) return
+    deleteCustomMeme(id)
+    setAllMemes(getAllMemes())
+  }
+
+  return <Shell><main className="page-pad content-page"><div className="page-title"><Sticker color="yellow">THE REACTION BANK</Sticker><h1>MEME LIBRARY</h1><p>{allMemes.length} reactions ready to destroy your camera.</p></div><div className="library-tools"><div className="search">⌕ <input placeholder="SEARCH MEMES..." /></div>{['FACE','HAND','MOVEMENT','ACTIVE'].map(x=><Button accent="white" key={x}>{x}</Button>)}<Button accent="black"><SlidersHorizontal size={16}/> SORT</Button></div><div className="meme-grid">{allMemes.map((m,i)=><MemeCard meme={m} index={i} key={m.id} onDelete={handleDelete}/>)}<Link href="/memes/create" className="create-card"><Plus size={28}/><strong>CREATE NEW MEME</strong><span>Build a reaction from scratch →</span></Link></div></main></Shell>
+}
 
 function CreateMemePage() {
   const [name, setName] = useState('')
