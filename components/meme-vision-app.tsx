@@ -12,7 +12,6 @@ import { useCamera } from '@/hooks/use-camera'
 import { useFaceLandmarker } from '@/hooks/use-face-landmarker'
 import { useHandLandmarker } from '@/hooks/use-hand-landmarker'
 import { useExpressionGestureDetection } from '@/hooks/use-expression-gesture-detection'
-import { useFacialExpressionModel } from '@/hooks/use-facial-expression-model'
 import { useMemeTriggerEngine } from '@/hooks/use-meme-trigger-engine'
 import { useLearnedGesture } from '@/hooks/use-learned-gesture'
 
@@ -271,13 +270,12 @@ function CameraPage() {
   const isRequesting = camera.status === 'requesting'
   const face = useFaceLandmarker(camera.videoRef, isActive)
   const hands = useHandLandmarker(camera.videoRef, isActive)
-  const facialExpression = useFacialExpressionModel(camera.videoRef, isActive)
-  const analysis = useExpressionGestureDetection(face.landmarksRef, hands.landmarksRef, face.blendshapesRef, hands.handednessRef, facialExpression.expressionRef, isActive)
+  const analysis = useExpressionGestureDetection(face.landmarksRef, hands.landmarksRef, face.blendshapesRef, hands.handednessRef, camera.videoRef, isActive)
   const memeEngine = useMemeTriggerEngine(analysis, face.landmarksRef, hands.landmarksRef, isActive)
   const activeMeme = memeEngine.topMatch?.meme ?? null
 
   return <Shell><main className="camera-page page-pad">
-    <div className="camera-topline"><div><Sticker color={isActive ? 'mint' : camera.status === 'denied' || camera.status === 'unavailable' || camera.status === 'error' ? 'pink' : 'yellow'}>● {isActive ? 'CAMERA LIVE' : isRequesting ? 'REQUESTING CAMERA' : 'CAMERA OFF'}</Sticker><span className="technical">{camera.devices.length ? `${camera.devices.length} CAMERA${camera.devices.length === 1 ? '' : 'S'} AVAILABLE` : 'CAMERA DEVICE'}</span></div><div className="technical">FER MODEL + MEDIAPIPE HAND · LOCAL INFERENCE</div></div>
+    <div className="camera-topline"><div><Sticker color={isActive ? 'mint' : camera.status === 'denied' || camera.status === 'unavailable' || camera.status === 'error' ? 'pink' : 'yellow'}>● {isActive ? 'CAMERA LIVE' : isRequesting ? 'REQUESTING CAMERA' : 'CAMERA OFF'}</Sticker><span className="technical">{camera.devices.length ? `${camera.devices.length} CAMERA${camera.devices.length === 1 ? '' : 'S'} AVAILABLE` : 'CAMERA DEVICE'}</span></div><div className="technical">ACTION SIGNALS + MEDIAPIPE · LOCAL INFERENCE</div></div>
     <div className="camera-workspace">
       <section className="camera-stage">
         <div className="stage-header"><span>LIVE VIEWPORT // 001</span><span>LOCAL VISION INPUT</span></div>
@@ -406,6 +404,7 @@ function CreateMemePage() {
     { value: 'wink-left', label: 'WINK LEFT' },
     { value: 'wink-right', label: 'WINK RIGHT' },
     { value: 'open', label: 'MOUTH OPEN' },
+    { value: 'tongue-out', label: 'TONGUE OUT' },
     { value: 'closed', label: 'MOUTH CLOSED' },
     { value: 'frown', label: 'FROWN MOUTH' },
     { value: 'upward', label: 'LOOK UP' },
@@ -495,7 +494,7 @@ function CreateMemePage() {
     if (faceValues.has(value)) {
       const feature: MemeCondition['feature'] = ['squinting', 'wide', 'eyes-closed', 'wink-left', 'wink-right'].includes(value)
         ? 'eyes'
-        : ['open', 'closed', 'frown'].includes(value) ? 'mouth'
+        : ['open', 'closed', 'frown', 'tongue-out'].includes(value) ? 'mouth'
         : ['upward', 'downward', 'left', 'right'].includes(value) ? 'gaze' : 'expression'
       return { feature, category: 'face', value, required: false }
     }
