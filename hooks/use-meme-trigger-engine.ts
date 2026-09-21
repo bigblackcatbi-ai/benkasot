@@ -155,7 +155,20 @@ function matchMeme(
   const groupResults = groups.map(group => {
     const matched = group.filter(condition => conditionMatches(condition, analysis, face, hands))
     const weight = Math.max(...group.map(condition => CONDITION_WEIGHTS[condition.feature] ?? 1))
-    const groupScore = matched.length > 0 ? 1 : 0
+    const confidenceForFeature = (feature: MemeCondition['feature']) => {
+      if (feature === 'eyes') return analysis.visionConfidence.eyes
+      if (feature === 'mouth') return analysis.visionConfidence.mouth
+      if (feature === 'expression') return analysis.visionConfidence.expression
+      if (feature === 'gaze') return analysis.visionConfidence.headDirection
+      if (feature === 'hands') return analysis.visionConfidence.hands.length
+        ? Math.max(...analysis.visionConfidence.hands)
+        : 0
+      if (feature === 'finger') return analysis.visionConfidence.hands.length
+        ? Math.max(...analysis.visionConfidence.hands)
+        : 0
+      return 0
+    }
+    const groupScore = matched.length > 0 ? confidenceForFeature(group[0].feature) : 0
     return { group, matched, weight, groupScore }
   })
 
@@ -179,7 +192,9 @@ function matchMeme(
   ).length
 
   const relaxedThreshold = requiredMisses > 0 ? TRIGGER_THRESHOLD : groupResults.length > 1 ? 62 : 45
-  const triggered = hasPrimarySignal &&
+  const confidenceGate = groupResults.length > 1 ? 0.5 : 0.42
+  const strongestConfidence = Math.max(...groupResults.map(group => group.groupScore), 0)
+  const triggered = hasPrimarySignal && strongestConfidence >= confidenceGate &&
     (groupResults.length === 1 ? score >= relaxedThreshold : allFeatureGroupsMatch && score >= relaxedThreshold)
 
   return {
