@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { NormalizedLandmark } from '@mediapipe/tasks-vision'
 
-export type FaceExpression = 'NO FACE' | 'NEUTRAL' | 'SURPRISED' | 'HAPPY' | 'SAD' | 'ANGRY' | 'SMIRK' | 'TONGUE OUT'
+export type FaceExpression = 'NO FACE' | 'NEUTRAL' | 'SURPRISED' | 'HAPPY' | 'SAD' | 'SMIRK' | 'TONGUE OUT'
 export type EyeState = 'NO FACE' | 'OPEN' | 'CLOSED' | 'WINK LEFT' | 'WINK RIGHT'
 export type MouthState = 'NO FACE' | 'OPEN' | 'CLOSED' | 'SMILE' | 'FROWN' | 'TONGUE OUT'
 export type HeadDirection = 'NO FACE' | 'FORWARD' | 'LEFT' | 'RIGHT' | 'UP' | 'DOWN'
@@ -16,7 +16,6 @@ export interface FaceSignals {
   smirk: number
   happy: number
   sad: number
-  angry: number
   surprised: number
   neutral: number
   smile: number
@@ -65,7 +64,7 @@ const avg = (...values: number[]) => values.length ? values.reduce((a, b) => a +
 const bs = (list: Blendshape[] | undefined, name: string) => list?.find(item => item.categoryName === name)?.score ?? 0
 
 const emptySignals = (): FaceSignals => ({
-  tongueOut: 0, smirk: 0, happy: 0, sad: 0, angry: 0, surprised: 0, neutral: 1,
+  tongueOut: 0, smirk: 0, happy: 0, sad: 0, surprised: 0, neutral: 1,
   smile: 0, frown: 0, browDown: 0, browInnerUp: 0, eyeSquint: 0, eyeWide: 0, jawOpen: 0, mouthPress: 0,
 })
 
@@ -152,12 +151,11 @@ function buildSignals(blendshapes: Blendshape[] | undefined, pixelTongue: number
   const smirk = clamp01((asymmetry - 0.12) / 0.35) * clamp01(Math.max(smile, 0.18) / 0.55)
   const happy = clamp01((smile * 1.35 + avg(bs(blendshapes, 'cheekSquintLeft'), bs(blendshapes, 'cheekSquintRight')) * 0.45 - frown * 0.5))
   const sad = clamp01(avg(browInnerUp * 1.15, frown * 1.35) * (1 - smile * 0.75))
-  const angry = clamp01(avg(browDown * 1.35, eyeSquint * 1.05, mouthPress * 1.15, frown * 0.75) * (1 - browInnerUp * 0.45))
   const surprised = clamp01(avg(eyeWide * 1.15, jawOpen * 1.25) * (1 - eyeSquint * 0.65))
-  const neutral = clamp01(1 - Math.max(happy, sad, angry, surprised, smirk, tongueOut) * 1.35)
+  const neutral = clamp01(1 - Math.max(happy, sad, surprised, smirk, tongueOut) * 1.35)
 
   return {
-    tongueOut, smirk, happy, sad, angry, surprised, neutral,
+    tongueOut, smirk, happy, sad, surprised, neutral,
     smile, frown, browDown, browInnerUp, eyeSquint, eyeWide, jawOpen, mouthPress,
   }
 }
@@ -170,7 +168,6 @@ function classifyExpression(signals: FaceSignals): { expression: FaceExpression;
     ['SMIRK', signals.smirk],
     ['SURPRISED', signals.surprised],
     ['HAPPY', signals.happy],
-    ['ANGRY', signals.angry],
     ['SAD', signals.sad],
     ['NEUTRAL', signals.neutral],
   ]
