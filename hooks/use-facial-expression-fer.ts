@@ -143,8 +143,10 @@ export function useFacialExpressionFER(
 
       loadingRef.current = (async () => {
         try {
-          const device = typeof navigator !== 'undefined' && 'gpu' in navigator ? 'webgpu' : 'wasm'
-          const classifier = await pipeline('image-classification', MODEL_ID, { device, dtype: 'q8' })
+          const webgpu = typeof navigator !== 'undefined' && 'gpu' in navigator
+          const device = webgpu ? 'webgpu' : 'wasm'
+          const dtype = webgpu ? 'fp16' : 'q8'
+          const classifier = await pipeline('image-classification', MODEL_ID, { device, dtype })
           if (cancelled) return
           classifierRef.current = classifier as unknown as ImageClassifier
           setState(current => ({ ...current, status: 'ready' }))
