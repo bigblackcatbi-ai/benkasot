@@ -12,6 +12,7 @@ import { useCamera } from '@/hooks/use-camera'
 import { useFaceLandmarker } from '@/hooks/use-face-landmarker'
 import { useHandLandmarker } from '@/hooks/use-hand-landmarker'
 import { useExpressionGestureDetection } from '@/hooks/use-expression-gesture-detection'
+import { useFacialExpressionModel } from '@/hooks/use-facial-expression-model'
 import { useMemeTriggerEngine } from '@/hooks/use-meme-trigger-engine'
 import { useLearnedGesture } from '@/hooks/use-learned-gesture'
 
@@ -270,12 +271,13 @@ function CameraPage() {
   const isRequesting = camera.status === 'requesting'
   const face = useFaceLandmarker(camera.videoRef, isActive)
   const hands = useHandLandmarker(camera.videoRef, isActive)
-  const analysis = useExpressionGestureDetection(face.landmarksRef, hands.landmarksRef, face.blendshapesRef, hands.handednessRef, isActive)
+  const facialExpression = useFacialExpressionModel(camera.videoRef, isActive)
+  const analysis = useExpressionGestureDetection(face.landmarksRef, hands.landmarksRef, face.blendshapesRef, hands.handednessRef, facialExpression.expressionRef, isActive)
   const memeEngine = useMemeTriggerEngine(analysis, face.landmarksRef, hands.landmarksRef, isActive)
   const activeMeme = memeEngine.topMatch?.meme ?? null
 
   return <Shell><main className="camera-page page-pad">
-    <div className="camera-topline"><div><Sticker color={isActive ? 'mint' : camera.status === 'denied' || camera.status === 'unavailable' || camera.status === 'error' ? 'pink' : 'yellow'}>● {isActive ? 'CAMERA LIVE' : isRequesting ? 'REQUESTING CAMERA' : 'CAMERA OFF'}</Sticker><span className="technical">{camera.devices.length ? `${camera.devices.length} CAMERA${camera.devices.length === 1 ? '' : 'S'} AVAILABLE` : 'CAMERA DEVICE'}</span></div><div className="technical">MEDIAPIPE FACE + HAND · LOCAL ONLY</div></div>
+    <div className="camera-topline"><div><Sticker color={isActive ? 'mint' : camera.status === 'denied' || camera.status === 'unavailable' || camera.status === 'error' ? 'pink' : 'yellow'}>● {isActive ? 'CAMERA LIVE' : isRequesting ? 'REQUESTING CAMERA' : 'CAMERA OFF'}</Sticker><span className="technical">{camera.devices.length ? `${camera.devices.length} CAMERA${camera.devices.length === 1 ? '' : 'S'} AVAILABLE` : 'CAMERA DEVICE'}</span></div><div className="technical">FER MODEL + MEDIAPIPE HAND · LOCAL INFERENCE</div></div>
     <div className="camera-workspace">
       <section className="camera-stage">
         <div className="stage-header"><span>LIVE VIEWPORT // 001</span><span>LOCAL VISION INPUT</span></div>
