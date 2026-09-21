@@ -239,21 +239,67 @@ export const memes: readonly Meme[] = [
 ]
 
 
+const STORAGE_KEY = 'meme-vision:memes:v1'
+
 let customMemes: Meme[] = []
 let deletedMemeIds = new Set<string>()
+let hydrated = false
+
+function hydrateMemes(): void {
+  if (hydrated || typeof window === 'undefined') return
+  hydrated = true
+
+  try {
+    const raw = window.localStorage.getItem(STORAGE_KEY)
+    if (!raw) return
+
+    const stored = JSON.parse(raw) as {
+      customMemes?: Meme[]
+      deletedMemeIds?: string[]
+    }
+
+    if (Array.isArray(stored.customMemes)) customMemes = stored.customMemes
+    if (Array.isArray(stored.deletedMemeIds)) deletedMemeIds = new Set(stored.deletedMemeIds)
+  } catch {
+    // Corrupt or unavailable local storage should never break the camera.
+  }
+}
+
+function persistMemes(): void {
+  if (typeof window === 'undefined') return
+
+  try {
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify({
+      customMemes,
+      deletedMemeIds: [...deletedMemeIds],
+    }))
+  } catch {
+    // Keep the current in-memory change even if storage quota is exceeded.
+  }
+}
 
 export function getAllMemes(): Meme[] {
+  hydrateMemes()
+
   const overriddenIds = new Set(customMemes.map((meme) => meme.id))
-  return [...memes.filter((meme) => !overriddenIds.has(meme.id) && !deletedMemeIds.has(meme.id)), ...customMemes.filter((meme) => !deletedMemeIds.has(meme.id))]
+  return [
+    ...memes.filter((meme) => !overriddenIds.has(meme.id) && !deletedMemeIds.has(meme.id)),
+    ...customMemes.filter((meme) => !deletedMemeIds.has(meme.id)),
+  ]
 }
 
 export function addCustomMeme(meme: Meme): void {
+  hydrateMemes()
   customMemes = [...customMemes.filter((item) => item.id !== meme.id), meme]
+  deletedMemeIds = new Set([...deletedMemeIds].filter((id) => id !== meme.id))
+  persistMemes()
 }
 
 export function deleteMeme(id: string): void {
+  hydrateMemes()
   deletedMemeIds = new Set(deletedMemeIds).add(id)
   customMemes = customMemes.filter((item) => item.id !== id)
+  persistMemes()
 }
 
 export function getMemeById(id: string): Meme | undefined {
