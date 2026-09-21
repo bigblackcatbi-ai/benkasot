@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { RefObject } from 'react'
 import { FilesetResolver, HandLandmarker } from '@mediapipe/tasks-vision'
+import type { NormalizedLandmark } from '@mediapipe/tasks-vision'
 
 const WASM_URL = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@1.0.1/wasm'
 const MODEL_URL = 'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task'
@@ -23,6 +24,7 @@ export function useHandLandmarker(videoRef: RefObject<HTMLVideoElement | null>, 
   const requestIdRef = useRef(0)
   const mountedRef = useRef(false)
   const lastTimestampRef = useRef(-1)
+  const landmarksRef = useRef<NormalizedLandmark[][]>([])
 
   const [state, setState] = useState<HandDetectionState>({
     status: 'idle',
@@ -59,6 +61,7 @@ export function useHandLandmarker(videoRef: RefObject<HTMLVideoElement | null>, 
   useEffect(() => {
     if (!enabled) {
       dispose()
+      landmarksRef.current = []
       setState({
         status: 'idle',
         handDetected: false,
@@ -110,6 +113,7 @@ export function useHandLandmarker(videoRef: RefObject<HTMLVideoElement | null>, 
             lastTimestampRef.current = timestamp
 
             const result = currentLandmarker.detectForVideo(currentVideo, timestamp)
+            landmarksRef.current = result.landmarks
             const handCount = result.landmarks.length
             const landmarkCount = handCount * 21
             const handedness = result.handednesses.flat()
@@ -134,6 +138,7 @@ export function useHandLandmarker(videoRef: RefObject<HTMLVideoElement | null>, 
           frameRef.current = requestAnimationFrame(processFrame)
         }
 
+        landmarksRef.current = []
         setState({
           status: 'active',
           handDetected: false,
@@ -167,5 +172,5 @@ export function useHandLandmarker(videoRef: RefObject<HTMLVideoElement | null>, 
     }
   }, [dispose, enabled, videoRef])
 
-  return state
+  return { ...state, landmarksRef }
 }
