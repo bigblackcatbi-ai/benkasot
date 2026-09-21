@@ -360,6 +360,32 @@ function CreateMemePage() {
       ? handOptions
       : [...faceOptions, ...handOptions]
 
+  const handleImage = (file?: File) => {
+    if (!file) return
+
+    if (file.size > 5 * 1024 * 1024) {
+      setError('Image is too large. Maximum size is 5 MB.')
+      return
+    }
+
+    setError('')
+    setSaved(false)
+    setImageName(file.name)
+
+    const reader = new FileReader()
+    reader.onload = () => {
+      if (typeof reader.result === 'string') {
+        setImagePath(reader.result)
+      }
+    }
+    reader.onerror = () => {
+      setError('Could not read that image. Try another file.')
+      setImagePath(null)
+      setImageName('')
+    }
+    reader.readAsDataURL(file)
+  }
+
   const toggleCondition = (value: MemeConditionValue) => {
     setSelectedConditions((current) => current.includes(value)
       ? current.filter((item) => item !== value)
