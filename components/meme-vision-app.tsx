@@ -8,6 +8,7 @@ import { memes } from '@/lib/memes'
 import type { Meme } from '@/types/meme'
 import { useCamera } from '@/hooks/use-camera'
 import { useFaceLandmarker } from '@/hooks/use-face-landmarker'
+import { useHandLandmarker } from '@/hooks/use-hand-landmarker'
 
 const nav = [
   ['CAMERA', '/camera', Camera], ['MEMES', '/memes', LayoutGrid], ['CREATE', '/memes/create', Plus], ['LEARN', '/learn', Sparkles], ['HISTORY', '/history', History], ['SETTINGS', '/settings', Settings],
@@ -50,6 +51,7 @@ function CameraPage() {
   const isActive = camera.status === 'active'
   const isRequesting = camera.status === 'requesting'
   const face = useFaceLandmarker(camera.videoRef, isActive)
+  const hands = useHandLandmarker(camera.videoRef, isActive)
 
   return <Shell><main className="camera-page page-pad">
     <div className="camera-topline"><div><Sticker color={isActive ? 'mint' : camera.status === 'denied' || camera.status === 'unavailable' || camera.status === 'error' ? 'pink' : 'yellow'}>● {isActive ? 'CAMERA LIVE' : isRequesting ? 'REQUESTING CAMERA' : 'CAMERA OFF'}</Sticker><span className="technical">{camera.devices.length ? `${camera.devices.length} CAMERA${camera.devices.length === 1 ? '' : 'S'} AVAILABLE` : 'CAMERA DEVICE'}</span></div><div className="technical">MEDIAPIPE FACE · NO AUDIO</div></div>
@@ -70,15 +72,18 @@ function CameraPage() {
         </div>
       </section>
       <aside className="detect-panel">
-        <div className="panel-heading"><span>FACE DETECTION</span><SlidersHorizontal size={17}/></div>
+        <div className="panel-heading"><span>VISION DETECTION</span><SlidersHorizontal size={17}/></div>
         <div className="detect-row"><span>CAMERA</span><b>{camera.status.toUpperCase()}</b></div>
         <div className="detect-row"><span>MEDIAPIPE</span><b>{face.status.toUpperCase()}</b></div>
         <div className="detect-row"><span>FACE</span><b><i className="green-dot"/> {face.faceDetected ? 'DETECTED' : 'NOT DETECTED'}</b></div>
         <div className="detect-row"><span>FACES</span><b>{face.faceCount}</b></div>
-        <div className="detect-row"><span>LANDMARKS</span><b>{face.landmarkCount}</b></div>
-        {face.error && <div className="match-box"><span>VISION MESSAGE</span><h2>CHECK MEDIAPIPE</h2><p>{face.error}</p></div>}
+        <div className="detect-row"><span>FACE LANDMARKS</span><b>{face.landmarkCount}</b></div>
+        <div className="detect-row"><span>HANDS</span><b><i className="green-dot"/> {hands.handDetected ? `${hands.handCount} DETECTED` : "NOT DETECTED"}</b></div>
+        <div className="detect-row"><span>HAND LANDMARKS</span><b>{hands.landmarkCount}</b></div>
+        <div className="detect-row"><span>LEFT / RIGHT</span><b>{hands.leftHandDetected ? "L" : "-"} / {hands.rightHandDetected ? "R" : "-"}</b></div>
+        {(face.error || hands.error) && <div className="match-box"><span>VISION MESSAGE</span><h2>CHECK MEDIAPIPE</h2><p>{face.error ?? hands.error}</p></div>}
         {camera.devices.length > 0 && <div className="trigger"><div className="trigger-title"><span>CAMERA DEVICE</span></div>{camera.devices.map((device) => <label className="toggle" key={device.deviceId}><span>{device.label}</span><input type="radio" name="camera-device" checked={device.deviceId === camera.selectedDeviceId} onChange={() => void camera.selectDevice(device.deviceId)}/><i/></label>)}</div>}
-        <div className="trigger"><div className="trigger-title"><span>PHASE 4</span></div><p>MediaPipe is detecting face landmarks only. Hands, expressions, triggers and overlays remain disabled.</p><small>FACE LANDMARKS → LOCAL PROCESSING</small></div>
+        <div className="trigger"><div className="trigger-title"><span>PHASE 5</span></div><p>MediaPipe is detecting face and hand landmarks. Gesture recognition, expressions, triggers and overlays remain disabled.</p><small>FACE + HAND LANDMARKS → LOCAL PROCESSING</small></div>
         <label className="toggle"><span>SHOW MOCK MEME</span><input type="checkbox" checked={overlay} onChange={(event) => setOverlay(event.target.checked)}/><i/></label>
       </aside>
     </div>
