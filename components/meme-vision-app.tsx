@@ -259,6 +259,7 @@ function CameraPage() {
   const camera = useCamera()
   const [overlay, setOverlay] = useState(true)
   const [goatBot, setGoatBot] = useState(false)
+  const [debugMode, setDebugMode] = useState(false)
 
   useEffect(() => {
     void camera.start()
@@ -287,6 +288,7 @@ function CameraPage() {
         <div className="camera-controls">
           <Button onClick={() => isActive ? camera.stop() : void camera.start()} accent="white">{isActive ? <Pause size={16}/> : <Play size={16}/>} {isActive ? 'STOP' : 'START'}</Button>
           <Button accent={goatBot ? 'yellow' : 'white'} onClick={() => setGoatBot((value) => !value)}><Cpu size={16}/> GOAT BOT {goatBot ? 'ON' : 'OFF'}</Button>
+          <Button accent={debugMode ? 'yellow' : 'white'} onClick={() => setDebugMode((value) => !value)}><SlidersHorizontal size={16}/> DEBUG {debugMode ? 'ON' : 'OFF'}</Button>
           <Button accent="white" disabled><Camera size={16}/> SNAPSHOT</Button>
           <Button accent="white" disabled><Video size={16}/> RECORD</Button>
           <Button accent="white" disabled><RotateCcw size={16}/> FLIP</Button>
@@ -312,6 +314,19 @@ function CameraPage() {
           </div> : <div className="gesture-empty">NO MEME TRIGGERED YET</div>}
           {memeEngine.matches.slice(1, 4).map(match => <div className="meme-match-row" key={match.meme.id}><span>{match.meme.shortLabel}</span><b>{match.score}%</b></div>)}
         </div>
+
+        {debugMode && <div className="analysis-box debug-box">
+          <div className="analysis-heading"><span>PHASE 12 // DEBUG</span><b>LIVE</b></div>
+          <div className="analysis-grid debug-grid">
+            <span>CANDIDATE</span><strong>{memeEngine.debug.candidateId ? (memeEngine.matches.find(match => match.meme.id === memeEngine.debug.candidateId)?.meme.shortLabel ?? memeEngine.debug.candidateId) : 'NONE'}</strong>
+            <span>CANDIDATE SCORE</span><strong>{memeEngine.debug.candidateScore}%</strong>
+            <span>CONFIRMATION</span><strong>{memeEngine.debug.candidateSamples}/{memeEngine.debug.confirmationNeeded || '-'}</strong>
+            <span>STABLE</span><strong>{memeEngine.debug.stableId ? (memeEngine.matches.find(match => match.meme.id === memeEngine.debug.stableId)?.meme.shortLabel ?? memeEngine.debug.stableId) : 'NONE'}</strong>
+            <span>STABLE SCORE</span><strong>{memeEngine.debug.stableScore}%</strong>
+            <span>LOCK</span><strong>{memeEngine.debug.lockRemainingMs > 0 ? Math.ceil(memeEngine.debug.lockRemainingMs) + ' MS' : 'OPEN'}</strong>
+          </div>
+          <small className="debug-note">FAST ≥ 82 · NORMAL ≥ 65 · TAKEOVER ≥ 78 + 12 MARGIN</small>
+        </div>}
 
         <div className="analysis-box">
           <div className="analysis-heading"><span>EXPRESSION / GESTURE</span><b>LIVE</b></div>
