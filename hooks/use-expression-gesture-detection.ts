@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import type { NormalizedLandmark } from '@mediapipe/tasks-vision'
 
-export type FaceExpression = 'NO FACE' | 'NEUTRAL' | 'SURPRISED' | 'HAPPY' | 'SAD' | 'ANGRY' | 'SMIRK'
+export type FaceExpression = 'NO FACE' | 'NEUTRAL' | 'SURPRISED' | 'HAPPY' | 'SAD' | 'SMIRK'
 export type EyeState = 'NO FACE' | 'OPEN' | 'CLOSED' | 'WINK LEFT' | 'WINK RIGHT'
 export type MouthState = 'NO FACE' | 'OPEN' | 'CLOSED' | 'SMILE' | 'FROWN'
 export type HeadDirection = 'NO FACE' | 'FORWARD' | 'LEFT' | 'RIGHT' | 'UP' | 'DOWN'
@@ -84,12 +84,13 @@ function analyzeFace(face: NormalizedLandmark[] | undefined) {
 
   const browLeft = face[105].y - face[159].y
   const browRight = face[334].y - face[386].y
-  const angry = browLeft < -0.045 && browRight < -0.045
+  // lowered/furrowed brows alone do not produce a distinct expression — they fall through to NEUTRAL
+  void browLeft; void browRight
   const happy = mouth === 'SMILE'
   const sad = mouth === 'FROWN'
   const surprised = eyes === 'OPEN' && mouth === 'OPEN'
   const asymmetry = Math.abs((face[61].y - face[291].y) / Math.max(mouthWidth, 0.001))
-  const faceExpression: FaceExpression = surprised ? 'SURPRISED' : angry ? 'ANGRY' : happy ? 'HAPPY' : sad ? 'SAD' : asymmetry > 0.12 ? 'SMIRK' : 'NEUTRAL'
+  const faceExpression: FaceExpression = surprised ? 'SURPRISED' : happy ? 'HAPPY' : sad ? 'SAD' : asymmetry > 0.12 ? 'SMIRK' : 'NEUTRAL'
 
   return { facePresent: true, faceExpression, eyes, mouth, headDirection }
 }
@@ -155,10 +156,10 @@ export function useExpressionGestureDetection(
 
     const update = () => {
       const faceState = analyzeFace(faceLandmarks.current[0])
-      const handGestures = handLandmarks.current.map((hand, index) => ({
-        handedness: handedness.current[index] === 'Left' || handedness.current[index] === 'Right'
-          ? handedness.current[index] as 'Left' | 'Right'
-          : 'Hand',
+      const handGestures: HandGestureState[] = handLandmarks.current.map((hand, index) => ({
+        handedness: (handedness.current[index] === 'Left' || handedness.current[index] === 'Right'
+          ? handedness.current[index]
+          : 'Hand') as HandGestureState['handedness'],
         gesture: analyzeHand(hand),
       }))
       setState({ ...faceState, handGestures })

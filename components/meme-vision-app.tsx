@@ -3,20 +3,17 @@
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useEffect, useRef, useState } from 'react'
-import { Camera, ChevronRight, Cpu, History, ImagePlus, LayoutGrid, Mic, Pause, Play, Plus, RotateCcw, Settings, Sparkles, SlidersHorizontal, Video, Zap } from 'lucide-react'
+import { Camera, ChevronRight, Cpu, ImagePlus, LayoutGrid, Pause, Play, Plus, Settings, SlidersHorizontal, Zap } from 'lucide-react'
 import { addCustomMeme, deleteMeme, getAllMemes, getMemeById, memes } from '@/lib/memes'
-import { addLearnedGesture, deleteLearnedGesture, getLearnedGestures } from '@/lib/learned-gestures'
-import type { LearnedGestureProfile } from '@/types/learned-gesture'
 import type { Meme, MemeCondition, MemeConditionValue } from '@/types/meme'
 import { useCamera } from '@/hooks/use-camera'
 import { useFaceLandmarker } from '@/hooks/use-face-landmarker'
 import { useHandLandmarker } from '@/hooks/use-hand-landmarker'
 import { useExpressionGestureDetection } from '@/hooks/use-expression-gesture-detection'
 import { useMemeTriggerEngine } from '@/hooks/use-meme-trigger-engine'
-import { useLearnedGesture } from '@/hooks/use-learned-gesture'
 
 const nav = [
-  ['CAMERA', '/camera', Camera], ['MEMES', '/memes', LayoutGrid], ['CREATE', '/memes/create', Plus], ['LEARN', '/learn', Sparkles], ['HISTORY', '/history', History], ['SETTINGS', '/settings', Settings],
+  ['CAMERA', '/camera', Camera], ['MEMES', '/memes', LayoutGrid], ['CREATE', '/memes/create', Plus], ['SETTINGS', '/settings', Settings],
 ] as const
 
 function Logo() { return <Link href="/" className="logo" aria-label="BENKASOT home"><span>BENKASOT</span></Link> }
@@ -27,7 +24,7 @@ function Button({ children, accent = 'black', className = '', onClick, disabled 
 
 function Shell({ children }: { children: React.ReactNode }) {
   const path = usePathname()
-  return <div className="app-shell"><header className="top-nav"><Logo /><nav>{nav.map(([label, href, Icon]) => <Link key={href} href={href} className={path === href || (href === '/camera' && path === '/') ? 'active' : ''}><Icon size={15} />{label}</Link>)}</nav><Link href="/camera" className="open-camera"><span className="live-dot" /> OPEN CAMERA <ChevronRight size={16} /></Link></header>{children}<footer className="footer"><Logo /><span>LOCAL VISION / v0.8.4</span><span>NO VIDEO UPLOAD</span></footer><div className="mobile-nav">{nav.slice(0, 5).map(([label, href, Icon]) => <Link href={href} key={href} className={path === href ? 'active' : ''}><Icon size={17}/><span>{label}</span></Link>)}</div></div>
+  return <div className="app-shell"><header className="top-nav"><Logo /><nav>{nav.map(([label, href, Icon]) => <Link key={href} href={href} className={path === href || (href === '/camera' && path === '/') ? 'active' : ''}><Icon size={15} />{label}</Link>)}</nav><Link href="/camera" className="open-camera"><span className="live-dot" /> OPEN CAMERA <ChevronRight size={16} /></Link></header>{children}<footer className="footer"><Logo /><span>LOCAL VISION / v0.8.4</span><span>NO VIDEO UPLOAD</span></footer><div className="mobile-nav">{nav.slice(0, 4).map(([label, href, Icon]) => <Link href={href} key={href} className={path === href ? 'active' : ''}><Icon size={17}/><span>{label}</span></Link>)}</div></div>
 }
 
 function Sticker({ children, color = 'yellow' }: { children: React.ReactNode; color?: string }) { return <span className={`sticker ${color}`}>{children}</span> }
@@ -133,7 +130,6 @@ function LandmarkOverlay({ enabled, video, faceLandmarks, handLandmarks }: { ena
         ctx.strokeStyle = '#111'
         ctx.fillStyle = '#111'
 
-        // A light mesh: nearby landmark pairs plus the face outline.
         for (let i = 0; i < face.length - 1; i += 2) line(face[i], face[i + 1])
         const outline = [10, 338, 297, 332, 284, 251, 389, 356, 454, 323, 361, 288, 397, 365, 379, 378, 400, 377, 152, 148, 176, 149, 150, 136, 172, 58, 132, 93, 234, 127, 162, 21, 54, 103, 67, 109, 10]
         for (let i = 0; i < outline.length - 1; i++) {
@@ -246,13 +242,9 @@ function MemeAROverlay({ meme, video, faceLandmarks }: { meme: Meme | null; vide
       ) : (
         <img src={meme.imagePath} alt={meme.name} onError={() => setFailedImage(meme.id)} />
       )}
-      <span className="meme-ar-tag">{meme.shortLabel} · {Math.round(memeEngineScore(meme))}%</span>
+      <span className="meme-ar-tag">{meme.shortLabel} · 100%</span>
     </div>
   )
-}
-
-function memeEngineScore(meme: Meme) {
-  return Math.max(0, Math.min(99, meme.mockConfidence))
 }
 
 function CameraPage() {
@@ -272,7 +264,12 @@ function CameraPage() {
   const hands = useHandLandmarker(camera.videoRef, isActive)
   const analysis = useExpressionGestureDetection(face.landmarksRef, hands.landmarksRef, hands.handednessRef, isActive)
   const memeEngine = useMemeTriggerEngine(analysis, face.landmarksRef, hands.landmarksRef, isActive)
-  const activeMeme = memeEngine.topMatch?.meme ?? null
+
+  // activeMeme is only non-null when all of that meme's required groups match.
+  const activeMeme = memeEngine.activeMeme
+  const activeMatch = activeMeme
+    ? memeEngine.matches.find(match => match.meme.id === activeMeme.id)
+    : null
 
   return <Shell><main className="camera-page page-pad">
     <div className="camera-topline"><div><Sticker color={isActive ? 'mint' : camera.status === 'denied' || camera.status === 'unavailable' || camera.status === 'error' ? 'pink' : 'yellow'}>● {isActive ? 'CAMERA LIVE' : isRequesting ? 'REQUESTING CAMERA' : 'CAMERA OFF'}</Sticker><span className="technical">{camera.devices.length ? `${camera.devices.length} CAMERA${camera.devices.length === 1 ? '' : 'S'} AVAILABLE` : 'CAMERA DEVICE'}</span></div><div className="technical">MEDIAPIPE FACE + HAND · LOCAL ONLY</div></div>
@@ -283,15 +280,13 @@ function CameraPage() {
           <video ref={camera.videoRef} autoPlay muted playsInline aria-label="Live camera preview" />
           <LandmarkOverlay enabled={goatBot && isActive} video={camera.videoRef.current} faceLandmarks={face.landmarksRef} handLandmarks={hands.landmarksRef} />
           {!isActive && <div className="camera-status-message"><strong>{isRequesting ? 'ALLOW CAMERA ACCESS' : camera.status === 'idle' ? 'CAMERA STOPPED' : 'CAMERA UNAVAILABLE'}</strong><span>{camera.error ?? 'Your live camera preview will appear here.'}</span>{camera.status !== 'denied' && camera.status !== 'unavailable' && camera.status !== 'error' && <Button accent="pink" onClick={() => void camera.start()}>START CAMERA</Button>}{camera.status === 'denied' && <Button accent="pink" onClick={() => void camera.start()}>TRY AGAIN</Button>}</div>}
+          {/* Meme AR overlay only appears after a meme's full requirement is met. */}
           {activeMeme && isActive && analysis.facePresent && <MemeAROverlay meme={activeMeme} video={camera.videoRef.current} faceLandmarks={face.landmarksRef} />}
         </div>
         <div className="camera-controls">
           <Button onClick={() => isActive ? camera.stop() : void camera.start()} accent="white">{isActive ? <Pause size={16}/> : <Play size={16}/>} {isActive ? 'STOP' : 'START'}</Button>
           <Button accent={goatBot ? 'yellow' : 'white'} onClick={() => setGoatBot((value) => !value)}><Cpu size={16}/> GOAT BOT {goatBot ? 'ON' : 'OFF'}</Button>
           <Button accent={debugMode ? 'yellow' : 'white'} onClick={() => setDebugMode((value) => !value)}><SlidersHorizontal size={16}/> DEBUG {debugMode ? 'ON' : 'OFF'}</Button>
-          <Button accent="white" disabled><Camera size={16}/> SNAPSHOT</Button>
-          <Button accent="white" disabled><Video size={16}/> RECORD</Button>
-          <Button accent="white" disabled><RotateCcw size={16}/> FLIP</Button>
           <Button accent="pink" className="meme-now" disabled>MEME NOW <Zap size={16}/></Button>
         </div>
       </section>
@@ -307,12 +302,15 @@ function CameraPage() {
         <div className="detect-row"><span>LEFT / RIGHT</span><b>{hands.leftHandDetected ? "L" : "-"} / {hands.rightHandDetected ? "R" : "-"}</b></div>
         {(face.error || hands.error) && <div className="match-box"><span>VISION MESSAGE</span><h2>CHECK MEDIAPIPE</h2><p>{face.error ?? hands.error}</p></div>}
         <div className="analysis-box">
-          <div className="analysis-heading"><span>MEME MATCH ENGINE</span><b>{memeEngine.topMatch ? memeEngine.topMatch.score + '%' : 'WAITING'}</b></div>
-          {memeEngine.topMatch ? <div className="meme-match-live">
+          <div className="analysis-heading"><span>MEME MATCH ENGINE</span><b>{activeMatch ? `${activeMatch.matched}/${activeMatch.total} ACTIVE` : memeEngine.topMatch ? `${memeEngine.topMatch.matched}/${memeEngine.topMatch.total} DETECTING` : 'WAITING'}</b></div>
+          {activeMeme ? <div className="meme-match-live">
+            <strong>{activeMeme.name}</strong>
+            <span>{activeMatch ? `${activeMatch.matched}/${activeMatch.total}` : 'FULL'} TRIGGERS MET — MEME ACTIVE</span>
+          </div> : memeEngine.topMatch ? <div className="meme-match-live">
             <strong>{memeEngine.topMatch.meme.name}</strong>
-            <span>{memeEngine.topMatch.matched}/{memeEngine.topMatch.total} TRIGGERS MATCHED</span>
+            <span>{memeEngine.topMatch.matched}/{memeEngine.topMatch.total} TRIGGERS MATCHED — WAITING FOR {memeEngine.topMatch.total}/{memeEngine.topMatch.total}</span>
           </div> : <div className="gesture-empty">NO MEME TRIGGERED YET</div>}
-          {memeEngine.matches.slice(1, 4).map(match => <div className="meme-match-row" key={match.meme.id}><span>{match.meme.shortLabel}</span><b>{match.score}%</b></div>)}
+          {memeEngine.matches.slice(1, 4).map(match => <div className="meme-match-row" key={match.meme.id}><span>{match.meme.shortLabel}</span><b>{match.matched}/{match.total}</b></div>)}
         </div>
 
         {debugMode && <div className="analysis-box debug-box">
@@ -320,12 +318,12 @@ function CameraPage() {
           <div className="analysis-grid debug-grid">
             <span>CANDIDATE</span><strong>{memeEngine.debug.candidateId ? (memeEngine.matches.find(match => match.meme.id === memeEngine.debug.candidateId)?.meme.shortLabel ?? memeEngine.debug.candidateId) : 'NONE'}</strong>
             <span>CANDIDATE SCORE</span><strong>{memeEngine.debug.candidateScore}%</strong>
-            <span>CONFIRMATION</span><strong>{memeEngine.debug.candidateSamples}/{memeEngine.debug.confirmationNeeded || '-'}</strong>
+            <span>SAMPLES</span><strong>{memeEngine.debug.candidateSamples}</strong>
             <span>STABLE</span><strong>{memeEngine.debug.stableId ? (memeEngine.matches.find(match => match.meme.id === memeEngine.debug.stableId)?.meme.shortLabel ?? memeEngine.debug.stableId) : 'NONE'}</strong>
             <span>STABLE SCORE</span><strong>{memeEngine.debug.stableScore}%</strong>
-            <span>LOCK</span><strong>{memeEngine.debug.lockRemainingMs > 0 ? Math.ceil(memeEngine.debug.lockRemainingMs) + ' MS' : 'OPEN'}</strong>
+            <span>ACTIVE MEME</span><strong>{activeMeme ? activeMeme.shortLabel : 'NONE'}</strong>
           </div>
-          <small className="debug-note">FAST ≥ 82 · NORMAL ≥ 65 · TAKEOVER ≥ 78 + 12 MARGIN</small>
+          <small className="debug-note">MEME ACTIVATES WHEN ALL OF ITS REQUIRED TRIGGERS ARE MET</small>
         </div>}
 
         <div className="analysis-box">
@@ -395,7 +393,6 @@ function CreateMemePage() {
     { value: 'crying', label: 'CRYING' },
     { value: 'happy', label: 'HAPPY' },
     { value: 'sad', label: 'SAD' },
-    { value: 'angry', label: 'ANGRY' },
     { value: 'smirk', label: 'SMIRK' },
     { value: 'squinting', label: 'SQUINT EYES' },
     { value: 'wide', label: 'WIDE EYES' },
@@ -473,22 +470,22 @@ function CreateMemePage() {
 
   const buildCondition = (value: MemeConditionValue): MemeCondition => {
     const faceValues = new Set<MemeConditionValue>([
-      'smiling', 'excited', 'crying', 'happy', 'sad', 'angry', 'smirk',
+      'smiling', 'excited', 'crying', 'happy', 'sad', 'smirk',
       'squinting', 'wide', 'open', 'closed', 'upward', 'right',
     ])
     if (faceValues.has(value)) {
       const feature: MemeCondition['feature'] = ['squinting', 'wide', 'open', 'closed'].includes(value)
         ? value === 'squinting' || value === 'wide' ? 'eyes' : 'mouth'
         : ['upward', 'right'].includes(value) ? 'gaze' : 'expression'
-      return { feature, category: 'face', value, required: false }
+      return { feature, category: 'face', value, required: true }
     }
     if (value === 'hands-on-head' || value === 'both-hands-near-head' || value === 'hand-on-head' || value === 'fist') {
-      return { feature: 'hands', category: 'hand', value, required: false }
+      return { feature: 'hands', category: 'hand', value, required: true }
     }
     if (value.startsWith('index-finger')) {
-      return { feature: 'finger', category: 'hand', value, required: false }
+      return { feature: 'finger', category: 'hand', value, required: true }
     }
-    return { feature: 'hands', category: 'hand', value, required: false }
+    return { feature: 'hands', category: 'hand', value, required: true }
   }
 
   const saveMeme = () => {
@@ -618,111 +615,18 @@ function CreateMemePage() {
   </main></Shell>
 }
 
-function LearnPage() {
-  const camera = useCamera()
-  const [profiles, setProfiles] = useState<LearnedGestureProfile[]>(getLearnedGestures())
-  const [name, setName] = useState('')
-  const [saved, setSaved] = useState(false)
-  const [error, setError] = useState('')
-
-  useEffect(() => {
-    void camera.start()
-    return () => camera.stop()
-  }, [camera.start, camera.stop])
-
-  const isActive = camera.status === 'active'
-  const hands = useHandLandmarker(camera.videoRef, isActive)
-  const learner = useLearnedGesture(hands.landmarksRef, hands.handednessRef, isActive, profiles)
-
-  const saveLearnedGesture = () => {
-    if (!learner.recordedLandmarks) {
-      setError('Record a gesture for 3 seconds first.')
-      return
-    }
-    if (!name.trim()) {
-      setError('Give the learned gesture a name.')
-      return
-    }
-
-    const profile: LearnedGestureProfile = {
-      id: `learned-${Date.now()}`,
-      name: name.trim().toUpperCase(),
-      createdAt: Date.now(),
-      handedness: learner.recordedHandedness,
-      landmarks: learner.recordedLandmarks,
-      sampleCount: learner.sampleCount,
-    }
-    addLearnedGesture(profile)
-    setProfiles(getLearnedGestures())
-    setSaved(true)
-    setError('')
-  }
-
-  const removeProfile = (id: string) => {
-    deleteLearnedGesture(id)
-    setProfiles(getLearnedGestures())
-  }
-
-  return <Shell><main className="page-pad content-page learn-page">
-    <div className="page-title">
-      <Sticker color="pink">PHASE 11 / TEACH THE MACHINE</Sticker>
-      <h1>TEACH IT A<br /><em>GESTURE.</em></h1>
-      <p>Hold a hand pose for three seconds. BENKASOT builds a local landmark signature and can recognize that pose later in this session.</p>
-    </div>
-
-    <div className="learn-layout">
-      <section className="big-panel">
-        <div className="panel-heading"><span>01 // LIVE TRAINING CAMERA</span><span>{isActive ? 'ACTIVE' : 'OFF'}</span></div>
-        <div className="learn-camera">
-          <video ref={camera.videoRef} autoPlay muted playsInline aria-label="Live training camera" />
-          {!isActive && <div className="learn-camera-message"><strong>{camera.status === 'requesting' ? 'ALLOW CAMERA ACCESS' : 'CAMERA OFF'}</strong><span>{camera.error ?? 'Start the camera to teach a gesture.'}</span><Button accent="pink" onClick={() => void camera.start()}>START CAMERA</Button></div>}
-          {isActive && <div className="learn-hud"><span>HAND LANDMARKS: {hands.landmarkCount}</span><span>{learner.recording ? `RECORDING ${learner.progress}%` : 'READY'}</span></div>}
-        </div>
-        <div className="learn-controls">
-          <Button accent="pink" disabled={!isActive || learner.recording} onClick={() => { setError(''); setSaved(false); learner.startRecording() }}><Play size={16}/> {learner.recording ? 'RECORDING...' : 'RECORD 3 SEC'}</Button>
-          <Button accent="white" disabled={learner.recording} onClick={() => { learner.clearRecording(); setSaved(false); setError('') }}><RotateCcw size={16}/> RESET TAKE</Button>
-        </div>
-        <div className="learn-progress"><span style={{ width: `${learner.progress}%` }} /></div>
-        <div className="learn-stats">
-          <span>SAMPLES <b>{learner.sampleCount}</b></span>
-          <span>HAND <b>{learner.recordedHandedness.toUpperCase()}</b></span>
-          <span>SIGNATURE <b>{learner.recordedLandmarks ? 'CAPTURED' : 'WAITING'}</b></span>
-        </div>
-      </section>
-
-      <section className="big-panel learn-builder">
-        <div className="panel-heading"><span>02 // NAME THE GESTURE</span><span>LOCAL ONLY</span></div>
-        <input className="custom-input" value={name} onChange={event => { setName(event.target.value); setSaved(false) }} placeholder="E.G. MY SECRET SIGNAL" maxLength={32} />
-        <div className="learn-signature">
-          <Sticker color="yellow">LANDMARK SIGNATURE</Sticker>
-          <h2>{learner.recordedLandmarks ? 'READY TO SAVE.' : 'NOT CAPTURED YET.'}</h2>
-          <p>{learner.recordedLandmarks ? `${learner.sampleCount} samples averaged into one normalized 21-point hand signature.` : 'Click RECORD 3 SEC, then hold the pose naturally until the capture completes.'}</p>
-        </div>
-        <Button accent="black" disabled={!learner.recordedLandmarks} onClick={saveLearnedGesture}><Zap size={16}/> {saved ? 'LEARNED TO SESSION' : 'SAVE LEARNED GESTURE'}</Button>
-        {error && <div className="custom-error">{error}</div>}
-
-        <div className="panel-heading learn-list-heading"><span>03 // LEARNED PROFILES</span><span>{profiles.length}</span></div>
-        {profiles.length ? profiles.map(profile => <div className="learn-profile" key={profile.id}>
-          <div><strong>{profile.name}</strong><span>{profile.handedness.toUpperCase()} HAND · {profile.sampleCount} SAMPLES</span></div>
-          <button type="button" className="small-link delete-link" onClick={() => removeProfile(profile.id)}>DELETE</button>
-        </div>) : <div className="gesture-empty">NO LEARNED GESTURES YET.</div>}
-      </section>
-    </div>
-
-    <div className="custom-note">
-      <Sticker color="blue">PHASE 11 NOTE</Sticker>
-      <p>Learning is local and session-only for now. The system stores a normalized hand landmark signature, not camera video. Persistent profiles arrive in Phase 12.</p>
-    </div>
-
-    {learner.matches.length > 0 && <div className="learn-match"><Sticker color="mint">LIVE MATCH</Sticker><strong>{learner.matches[0].profile.name}</strong><span>{learner.matches[0].score}% SIGNATURE MATCH</span></div>}
-  </main></Shell>
-}
-
-function GenericPage({ kind }: { kind: string }) { const config: Record<string,[string,string,string]> = { create:['CREATE YOUR OWN REACTION','Build a trigger that feels like you.','UPLOAD → CONDITION → TEST → SAVE'], learn:['TEACH IT A NEW REACTION','Show the camera what your reaction looks like.','RECORD → ANALYZE → PROFILE'], history:['REACTION HISTORY','The receipts. Nothing more, nothing less.','LOCAL LOG / VIDEO NOT STORED'], settings:['SETTINGS','Tune the machine to your particular brand of chaos.','PREFERENCES / DEBUG / PRIVACY'], about:['HOW IT WORKS','Sophisticated computer vision. Extremely unserious output.','CAMERA → VISION → MATCH → REACT'] }; const [title, sub, kicker] = config[kind] || config.about; return <Shell><main className="page-pad content-page generic"><div className="page-title"><Sticker color={kind==='settings'?'blue':'pink'}>{kicker}</Sticker><h1>{title}</h1><p>{sub}</p></div><div className="generic-layout"><section className="big-panel"><div className="panel-heading"><span>{kind === 'about' ? 'SYSTEM DIAGRAM' : kind.toUpperCase() + ' WORKSPACE'}</span><Cpu size={17}/></div>{kind === 'create' && <><div className="upload-box"><ImagePlus size={32}/><h2>DROP A MEME HERE</h2><p>PNG · JPG · WEBP · GIF</p><Button accent="pink">CHOOSE FILE</Button></div><div className="builder-row"><span>WHEN</span><Sticker color="yellow">FACE</Sticker><Plus/><Sticker color="blue">HAND</Sticker><Plus/><Sticker color="mint">MOVEMENT</Sticker></div></>}{kind === 'learn' && <><div className="training-preview"><div className="training-face">READY?</div><span>CAMERA PREVIEW // HOLD YOUR REACTION FOR 3 SECONDS</span></div><div className="countdown"><b>03</b><span>GET READY</span><Button accent="pink">START RECORDING</Button></div></>}{kind === 'history' && <HistoryRows/>}{kind === 'settings' && <SettingsRows/>}{kind === 'about' && <AboutDiagram/>}</section><aside className="side-note"><Sticker color="yellow">STATUS</Sticker><h2>VISION ONLINE.</h2><p>Everything here is a demo state, ready for MediaPipe to take over in VS Code.</p><Button accent="black">OPEN CAMERA <ChevronRight size={15}/></Button></aside></div></main></Shell> }
-function HistoryRows(){return <div className="history-rows">{[['11:42:12','SHOCKED','91%'],['11:40:03','JUDGING PEOPLE','84%'],['11:37:48','YESSS','88%'],['11:21:19','THINKING','79%']].map(r=><div className="history-row" key={r[0]}><span>{r[0]}</span><strong>{r[1]}</strong><b>{r[2]}</b><ChevronRight size={15}/></div>)}</div>}
 function SettingsRows(){return <div className="settings-rows">{['CAMERA','AUDIO','DETECTION','OVERLAY','PRIVACY','PERFORMANCE','APPEARANCE'].map((x,i)=><div className="settings-row" key={x}><span>{x}</span><b>{i===4?'LOCAL PROCESSING ENABLED':'CONFIGURE'}</b><ChevronRight size={16}/></div>)}</div>}
 function AboutDiagram(){return <div className="diagram">{['CAMERA','VISION ENGINE','FACE + HAND LANDMARKS','EXPRESSION / GESTURE','MEME MATCHER','AR OVERLAY'].map((x,i)=><div key={x}><strong>{x}</strong>{i<5 && <ChevronRight/>}</div>)}</div>}
 
-export default function MemeVisionApp(){ const path=usePathname(); if(path==='/') return <Home/>; if(path==='/camera') return <CameraPage/>; if(path==='/memes') return <LibraryPage/>; if(path==='/memes/create') return <CreateMemePage/>; if(path==='/learn') return <LearnPage/>; if(path==='/history') return <GenericPage kind="history"/>; if(path==='/settings') return <GenericPage kind="settings"/>; return <GenericPage kind="about"/> }
+function GenericPage({ kind }: { kind: string }) {
+  const config: Record<string,[string,string,string]> = {
+    settings:['SETTINGS','Tune the machine to your particular brand of chaos.','PREFERENCES / DEBUG / PRIVACY'],
+    about:['HOW IT WORKS','Sophisticated computer vision. Extremely unserious output.','CAMERA → VISION → MATCH → REACT']
+  }
+  const [title, sub, kicker] = config[kind] || config.about
+  return <Shell><main className="page-pad content-page generic"><div className="page-title"><Sticker color={kind==='settings'?'blue':'pink'}>{kicker}</Sticker><h1>{title}</h1><p>{sub}</p></div><div className="generic-layout"><section className="big-panel"><div className="panel-heading"><span>{kind === 'about' ? 'SYSTEM DIAGRAM' : kind.toUpperCase() + ' WORKSPACE'}</span><Cpu size={17}/></div>{kind === 'settings' && <SettingsRows/>}{kind === 'about' && <AboutDiagram/>}</section><aside className="side-note"><Sticker color="yellow">STATUS</Sticker><h2>VISION ONLINE.</h2><p>Everything here is a demo state, ready for MediaPipe to take over in VS Code.</p><Button accent="black">OPEN CAMERA <ChevronRight size={15}/></Button></aside></div></main></Shell>
+}
+
+export default function MemeVisionApp(){ const path=usePathname(); if(path==='/') return <Home/>; if(path==='/camera') return <CameraPage/>; if(path==='/memes') return <LibraryPage/>; if(path==='/memes/create') return <CreateMemePage/>; if(path==='/settings') return <GenericPage kind="settings"/>; return <GenericPage kind="about"/> }
 
 export { Button, Logo, Shell, MemeCard, memes }

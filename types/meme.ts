@@ -35,7 +35,6 @@ export type MemeConditionValue =
   | 'celebratory'
   | 'happy'
   | 'sad'
-  | 'angry'
   | 'smirk'
   | 'open-palm'
   | 'thumbs-up'
