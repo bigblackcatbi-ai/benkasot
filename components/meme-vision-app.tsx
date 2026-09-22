@@ -387,40 +387,38 @@ function CreateMemePage() {
     setSelectedConditions(existing.trigger.conditions.filter((condition) => condition.enabled !== false).map((condition) => condition.value))
   }, [])
 
-  const faceOptions: Array<{ value: MemeConditionValue; label: string }> = [
-    { value: 'smiling', label: 'SMILE' },
-    { value: 'excited', label: 'EXCITED' },
-    { value: 'crying', label: 'CRYING' },
-    { value: 'happy', label: 'HAPPY' },
-    { value: 'sad', label: 'SAD' },
-    { value: 'smirk', label: 'SMIRK' },
-    { value: 'squinting', label: 'SQUINT EYES' },
-    { value: 'wide', label: 'WIDE EYES' },
-    { value: 'open', label: 'MOUTH OPEN' },
-    { value: 'closed', label: 'MOUTH CLOSED' },
-    { value: 'upward', label: 'LOOK UP' },
-    { value: 'right', label: 'LOOK RIGHT' },
+   const faceOptions: Array<{ value: MemeConditionValue; label: string }> = [
+   { value: 'smiling', label: 'SMILE' },
+   { value: 'happy', label: 'HAPPY' },
+   { value: 'sad', label: 'SAD' },
+   { value: 'surprised', label: 'SURPRISED' },
+   { value: 'smirk', label: 'SMIRK' },
+   { value: 'neutral', label: 'NEUTRAL' },
+   { value: 'squinting', label: 'SQUINT EYES' },
+   { value: 'wide', label: 'WIDE EYES' },
+   { value: 'open', label: 'MOUTH OPEN' },
+   { value: 'closed', label: 'MOUTH CLOSED' },
+   { value: 'upward', label: 'LOOK UP' },
+   { value: 'right', label: 'LOOK RIGHT' },
+   { value: 'left', label: 'LOOK LEFT' },
+   { value: 'down', label: 'LOOK DOWN' },
   ]
 
   const handOptions: Array<{ value: MemeConditionValue; label: string }> = [
-    { value: 'hands-on-head', label: 'HANDS ON HEAD' },
-    { value: 'both-hands-near-head', label: 'BOTH HANDS NEAR HEAD' },
-    { value: 'hand-on-head', label: 'HAND ON HEAD' },
-    { value: 'fist', label: 'FIST' },
     { value: 'open-palm', label: 'OPEN PALM' },
+    { value: 'fist', label: 'FIST' },
+    { value: 'peace', label: 'PEACE' },
     { value: 'thumbs-up', label: 'THUMBS UP' },
     { value: 'thumbs-down', label: 'THUMBS DOWN' },
-    { value: 'pointing', label: 'POINTING' },
-    { value: 'peace', label: 'PEACE' },
+    { value: 'pointing-up', label: 'POINTING UP' },
     { value: 'three-fingers', label: 'THREE FINGERS' },
-    { value: 'four-fingers', label: 'FOUR FINGERS' },
-    { value: 'ok', label: 'OK' },
-    { value: 'rock', label: 'ROCK' },
-    { value: 'pinch', label: 'PINCH' },
-    { value: 'finger-gun', label: 'FINGER GUN' },
-    { value: 'index-finger-near-mouth', label: 'FINGER NEAR MOUTH' },
-    { value: 'index-finger-near-head', label: 'FINGER NEAR HEAD' },
-    { value: 'index-finger-to-chest', label: 'FINGER TO CHEST' },
+    { value: 'hand-on-head', label: 'HAND ON HEAD' },
+    { value: 'both-hands-near-head', label: 'BOTH HANDS ON HEAD' },
+    { value: 'hand-on-chest', label: 'HAND ON CHEST' },
+    { value: 'index-finger-near-mouth', label: 'INDEX FINGER NEAR MOUTH' },
+    { value: 'index-finger-near-head', label: 'INDEX FINGER NEAR HEAD' },
+    { value: 'index-finger-to-chest', label: 'INDEX FINGER TO CHEST' },
+    { value: 'salute', label: 'SALUTE' },
   ]
 
   const visibleOptions = mode === 'expression'
@@ -469,24 +467,88 @@ function CreateMemePage() {
   }
 
   const buildCondition = (value: MemeConditionValue): MemeCondition => {
-    const faceValues = new Set<MemeConditionValue>([
-      'smiling', 'excited', 'crying', 'happy', 'sad', 'smirk',
-      'squinting', 'wide', 'open', 'closed', 'upward', 'right',
-    ])
-    if (faceValues.has(value)) {
-      const feature: MemeCondition['feature'] = ['squinting', 'wide', 'open', 'closed'].includes(value)
-        ? value === 'squinting' || value === 'wide' ? 'eyes' : 'mouth'
-        : ['upward', 'right'].includes(value) ? 'gaze' : 'expression'
-      return { feature, category: 'face', value, required: true }
+  const eyeValues = new Set<MemeConditionValue>([
+    'squinting',
+    'wide',
+  ])
+
+  const mouthValues = new Set<MemeConditionValue>([
+    'open',
+    'closed',
+    'smiling',
+  ])
+
+  const gazeValues = new Set<MemeConditionValue>([
+    'upward',
+    'right',
+    'left',
+    'down',
+  ])
+
+  const expressionValues = new Set<MemeConditionValue>([
+    'happy',
+    'sad',
+    'surprised',
+    'smirk',
+    'neutral',
+  ])
+
+  if (eyeValues.has(value)) {
+    return {
+      feature: 'eyes',
+      category: 'face',
+      value,
+      required: true,
     }
-    if (value === 'hands-on-head' || value === 'both-hands-near-head' || value === 'hand-on-head' || value === 'fist') {
-      return { feature: 'hands', category: 'hand', value, required: true }
-    }
-    if (value.startsWith('index-finger')) {
-      return { feature: 'finger', category: 'hand', value, required: true }
-    }
-    return { feature: 'hands', category: 'hand', value, required: true }
   }
+
+  if (mouthValues.has(value)) {
+    return {
+      feature: 'mouth',
+      category: 'face',
+      value,
+      required: true,
+    }
+  }
+
+  if (gazeValues.has(value)) {
+    return {
+      feature: 'gaze',
+      category: 'face',
+      value,
+      required: true,
+    }
+  }
+
+  if (expressionValues.has(value)) {
+    return {
+      feature: 'expression',
+      category: 'face',
+      value,
+      required: true,
+    }
+  }
+
+  if (
+    value === 'index-finger-near-mouth' ||
+    value === 'index-finger-near-head' ||
+    value === 'index-finger-to-chest'
+  ) {
+    return {
+      feature: 'finger',
+      category: 'hand',
+      value,
+      required: true,
+    }
+  }
+
+  return {
+    feature: 'hands',
+    category: 'hand',
+    value,
+    required: true,
+  }
+}
 
   const saveMeme = () => {
     if (!name.trim() || !imagePath) {

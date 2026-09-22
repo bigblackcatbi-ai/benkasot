@@ -100,13 +100,6 @@ function conditionMatches(
       )
     }
 
-    if (value === 'crying') {
-      return (
-        analysis.mouth === 'FROWN' ||
-        analysis.faceExpression === 'SAD'
-      )
-    }
-
     if (value === 'happy') {
       return analysis.faceExpression === 'HAPPY'
     }
@@ -127,24 +120,11 @@ function conditionMatches(
   // --------------------------------------------------
 
   if (condition.feature === 'expression') {
-    if (value === 'excited') {
-      return (
-        analysis.faceExpression === 'HAPPY' ||
-        analysis.faceExpression === 'SURPRISED'
-      )
-    }
 
     if (value === 'smiling') {
       return (
         analysis.faceExpression === 'HAPPY' ||
         analysis.mouth === 'SMILE'
-      )
-    }
-
-    if (value === 'crying') {
-      return (
-        analysis.faceExpression === 'SAD' ||
-        analysis.mouth === 'FROWN'
       )
     }
 
@@ -278,8 +258,7 @@ function conditionMatches(
     // ------------------------------------------------
 
     if (
-      value ===
-      'both-hands-near-left-chest'
+      value === 'hand-on-chest'
     ) {
       const leftChestHands =
         hands.filter((hand) => {

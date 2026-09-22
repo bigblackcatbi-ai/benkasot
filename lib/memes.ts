@@ -95,9 +95,8 @@ export const memes: readonly Meme[] = [
     trigger: {
       type: 'combined',
       conditions: [
-        { feature: 'expression', category: 'face', value: 'excited', required: true },
+        { feature: 'expression', category: 'face', value: 'happy', required: true },
         { feature: 'hands', category: 'hand', value: 'fist', required: true },
-        { feature: 'movement', category: 'movement', value: 'celebratory', required: false, enabled: false },
       ],
     },
     overlay: defaultOverlay,
@@ -141,7 +140,7 @@ export const memes: readonly Meme[] = [
       type: 'combined',
       conditions: [
         { feature: 'hands', category: 'hand', value: 'both-hands-near-head', required: true },
-        { feature: 'expression', category: 'face', value: 'crying', required: true },
+        { feature: 'expression', category: 'face', value: 'sad', required: true },
         { feature: 'mouth', category: 'face', value: 'open', required: true },
       ],
     },
@@ -229,7 +228,7 @@ export const memes: readonly Meme[] = [
     trigger: {
       type: 'combined',
       conditions: [
-        { feature: 'hands', category: 'hand', value: 'both-hands-near-left-chest', required: true },
+        { feature: 'hands', category: 'hand', value: 'hand-on-chest', required: true },
         { feature: 'mouth', category: 'face', value: 'open', required: true },
         { feature: 'gaze', category: 'face', value: 'right', required: true },
       ],
