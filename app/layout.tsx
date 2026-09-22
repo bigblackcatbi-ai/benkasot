@@ -3,7 +3,7 @@ import type { Metadata, Viewport } from 'next'
 import './globals.css'
 
 export const metadata: Metadata = {
-  title: 'MEME//VISION — Make a face. Get a meme.',
+  title: 'BENKASOT — Make a face. Get a meme.',
   description: 'A browser-based webcam meme reaction machine. Your expressions trigger the reaction.',
   generator: 'v0.app',
   icons: {
