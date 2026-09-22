@@ -40,9 +40,69 @@ function MemePreview({ meme, index = 0 }: { meme: Meme; index?: number }) {
   return <Placeholder label={index % 3 === 1 ? '!!!' : meme.shortLabel} color={meme.accentColor} />
 }
 
+function VisionPanel() {
+  return (
+    <div className="home-vision" aria-label="BENKASOT vision preview">
+      <div className="vision-header">
+        <span><i className="vision-live-dot" /> VISION MONITOR</span>
+        <span>001 / LOCAL</span>
+      </div>
+
+      <div className="vision-screen">
+        <div className="vision-grid-lines" aria-hidden="true" />
+
+        <span className="vision-corner vision-corner-tl">FACE // 01</span>
+        <span className="vision-corner vision-corner-tr">478 PTS</span>
+        <span className="vision-corner vision-corner-bl">READY</span>
+        <span className="vision-corner vision-corner-br">REAL-TIME</span>
+
+        <div className="vision-face" aria-hidden="true">
+          <div className="vision-face-outline">
+            <span className="vision-eye vision-eye-left" />
+            <span className="vision-eye vision-eye-right" />
+            <span className="vision-nose" />
+            <span className="vision-mouth" />
+            <span className="vision-ear vision-ear-left" />
+            <span className="vision-ear vision-ear-right" />
+          </div>
+          <span className="vision-crosshair vision-crosshair-h" />
+          <span className="vision-crosshair vision-crosshair-v" />
+          <span className="vision-point p1" /><span className="vision-point p2" />
+          <span className="vision-point p3" /><span className="vision-point p4" />
+        </div>
+
+        <div className="vision-hand vision-hand-left">✦</div>
+        <div className="vision-hand vision-hand-right">✦</div>
+
+        <div className="vision-meme-card">
+          <small>TRIGGER DETECTED</small>
+          <strong>MEME!</strong>
+          <span>FACE + GESTURE</span>
+        </div>
+
+        <div className="vision-status-card">
+          <div><span>FACE</span><b>DETECTED</b></div>
+          <div><span>HANDS</span><b>READY</b></div>
+          <div><span>ENGINE</span><b>LIVE</b></div>
+        </div>
+
+        <div className="vision-arrow">↗</div>
+      </div>
+
+      <div className="vision-footer">
+        <span>MAKE A FACE</span>
+        <b>→</b>
+        <span>MAKE A GESTURE</span>
+        <b>→</b>
+        <span>GET A MEME</span>
+      </div>
+    </div>
+  )
+}
+
 function Home() {
   return <Shell><main>
-    <section className="hero page-pad"><div className="hero-copy"><Sticker>BENKASOT ●</Sticker><h1>MAKE FACES.<br />MAKE GESTURES.<br /><em>GET MEMES.</em></h1><p className="hero-sub">Your webcam watches the chaos. Your expressions and gestures trigger the reaction — all processed locally in your browser.</p><div className="hero-actions"><Link href="/camera" className="brutal-btn pink">OPEN CAMERA <ChevronRight size={18}/></Link><Link href="/memes" className="brutal-btn white">MEMES</Link><Link href="/memes/create" className="brutal-btn yellow">CREATE MEME</Link></div><div className="badges"><Sticker color="mint">BROWSER-BASED</Sticker><Sticker color="blue">REAL-TIME</Sticker></div></div></section>
+    <section className="hero page-pad"><div className="hero-copy"><Sticker>BENKASOT ●</Sticker><h1>MAKE FACES.<br />MAKE GESTURES.<br /><em>GET MEMES.</em></h1><p className="hero-sub">Your webcam watches the chaos. Your expressions and gestures trigger the reaction — all processed locally in your browser.</p><div className="hero-actions"><Link href="/camera" className="brutal-btn pink">OPEN CAMERA <ChevronRight size={18}/></Link><Link href="/memes" className="brutal-btn white">MEMES</Link><Link href="/memes/create" className="brutal-btn yellow">CREATE MEME</Link></div><div className="badges"><Sticker color="mint">BROWSER-BASED</Sticker><Sticker color="blue">REAL-TIME</Sticker></div></div><VisionPanel /></section>
   </main></Shell>
 }
 
