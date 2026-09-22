@@ -11,7 +11,7 @@ const nav = [
   ['CAMERA', '/camera', Camera], ['MEMES', '/memes', LayoutGrid], ['CREATE', '/memes/create', Plus], ['LEARN', '/learn', Sparkles], ['HISTORY', '/history', History], ['SETTINGS', '/settings', Settings],
 ] as const
 
-function Logo() { return <Link href="/" className="logo" aria-label="MEME VISION home"><span>MEME</span><b>//</b><span>VISION</span></Link> }
+function Logo() { return <Link href="/" className="logo" aria-label="BENKASOT home"><span>BENKASOT</span></Link> }
 
 function Button({ children, accent = 'black', className = '', onClick }: { children: React.ReactNode; accent?: string; className?: string; onClick?: () => void }) {
   return <button onClick={onClick} className={`brutal-btn ${accent} ${className}`}>{children}</button>
