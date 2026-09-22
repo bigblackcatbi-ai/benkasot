@@ -240,7 +240,7 @@ function MemeAROverlay({ meme, video, faceLandmarks }: { meme: Meme | null; vide
     >
       {imageBroken ? (
         <div className="meme-ar-fallback">
-          <span>MEME//VISION</span>
+          <span>BENKASOT</span>
           <strong>{meme.shortLabel}</strong>
         </div>
       ) : (
@@ -667,7 +667,7 @@ function LearnPage() {
     <div className="page-title">
       <Sticker color="pink">PHASE 11 / TEACH THE MACHINE</Sticker>
       <h1>TEACH IT A<br /><em>GESTURE.</em></h1>
-      <p>Hold a hand pose for three seconds. MEME//VISION builds a local landmark signature and can recognize that pose later in this session.</p>
+      <p>Hold a hand pose for three seconds. BENKASOT builds a local landmark signature and can recognize that pose later in this session.</p>
     </div>
 
     <div className="learn-layout">
