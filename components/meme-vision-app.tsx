@@ -2,10 +2,13 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Camera, ChevronRight, Cpu, ImagePlus, LayoutGrid, Pause, Play, Plus, Settings, SlidersHorizontal, Zap } from 'lucide-react'
-import { addCustomMeme, deleteMeme, getAllMemes, getMemeById, memes } from '@/lib/memes'
-import type { Meme, MemeCondition, MemeConditionValue } from '@/types/meme'
+import type { NormalizedLandmark } from '@mediapipe/tasks-vision'
+import { addCustomMeme, deleteMeme, ensureMemesLoaded, getAllMemes, getMemeById, memes, subscribeMemes } from '@/lib/memes'
+import { loadSettings, saveSettings } from '@/lib/settings'
+import type { AppSettings } from '@/lib/settings'
+import type { Meme, MemeCondition, MemeConditionCategory, MemeConditionValue } from '@/types/meme'
 import { useCamera } from '@/hooks/use-camera'
 import { useFaceLandmarker } from '@/hooks/use-face-landmarker'
 import { useHandLandmarker } from '@/hooks/use-hand-landmarker'
@@ -24,7 +27,7 @@ function Button({ children, accent = 'black', className = '', onClick, disabled 
 
 function Shell({ children }: { children: React.ReactNode }) {
   const path = usePathname()
-  return <div className="app-shell"><header className="top-nav"><Logo /><nav>{nav.map(([label, href, Icon]) => <Link key={href} href={href} className={path === href || (href === '/camera' && path === '/') ? 'active' : ''}><Icon size={15} />{label}</Link>)}</nav><Link href="/camera" className="open-camera"><span className="live-dot" /> OPEN CAMERA <ChevronRight size={16} /></Link></header>{children}<footer className="footer"><Logo /><span>LOCAL VISION / v0.8.4</span><span>NO VIDEO UPLOAD</span></footer><div className="mobile-nav">{nav.slice(0, 4).map(([label, href, Icon]) => <Link href={href} key={href} className={path === href ? 'active' : ''}><Icon size={17}/><span>{label}</span></Link>)}</div></div>
+  return <div className="app-shell"><header className="top-nav"><Logo /><nav>{nav.map(([label, href, Icon]) => <Link key={href} href={href} className={path === href || (href === '/camera' && path === '/') ? 'active' : ''}><Icon size={15} />{label}</Link>)}</nav><Link href="/camera" className="open-camera"><span className="live-dot" /> OPEN CAMERA <ChevronRight size={16} /></Link></header>{children}<footer className="footer"><Logo /></footer><div className="mobile-nav">{nav.slice(0, 4).map(([label, href, Icon]) => <Link href={href} key={href} className={path === href ? 'active' : ''}><Icon size={17}/><span>{label}</span></Link>)}</div></div>
 }
 
 function Sticker({ children, color = 'yellow' }: { children: React.ReactNode; color?: string }) { return <span className={`sticker ${color}`}>{children}</span> }
@@ -39,10 +42,7 @@ function MemePreview({ meme, index = 0 }: { meme: Meme; index?: number }) {
 
 function Home() {
   return <Shell><main>
-    <section className="hero page-pad"><div className="hero-copy"><Sticker>VISION ONLINE ●</Sticker><h1>MAKE A FACE.<br /><em>GET A MEME.</em></h1><p className="hero-sub">Your webcam watches the chaos. Your expressions trigger the reaction.</p><div className="hero-actions"><Link href="/camera" className="brutal-btn pink">OPEN CAMERA <ChevronRight size={18}/></Link><Link href="/memes" className="brutal-btn white">EXPLORE MEMES</Link></div><div className="badges"><Sticker color="mint">BROWSER-BASED</Sticker><Sticker color="blue">REAL-TIME</Sticker><Sticker color="orange">NO VIDEO UPLOAD</Sticker></div></div><div className="hero-device"><div className="device-top"><span><i className="live-dot"/> CAMERA LIVE</span><span>FPS 30</span></div><div className="fake-camera"><div className="face-grid"><span className="face-shape"/><span className="eye e1"/><span className="eye e2"/><span className="mouth"/></div><div className="ar-sticker">SHOCKED<br /><small>91% MATCH</small></div><span className="hud hud-a">FACE DETECTED</span><span className="hud hud-b">HANDS: 2</span><span className="hud hud-c">MEME LOCKED.</span></div><div className="device-bottom"><span>EXPRESSION: SURPRISED</span><span>LOCAL PROCESSING</span></div></div></section>
-    <section className="how page-pad"><div className="section-heading"><Sticker color="blue">THE LOOP</Sticker><h2>HOW IT WORKS</h2><p>Four steps between your face and absolute nonsense.</p></div><div className="steps">{[['01','CAMERA','Allow webcam access.'],['02','VISION','Detect face + hands.'],['03','MATCH','Compare the chaos.'],['04','REACT','Drop meme on camera.']].map(([n,t,d])=><div className="step" key={n}><b>{n}</b><h3>{t}</h3><p>{d}</p><ChevronRight /></div>)}</div></section>
-    <section className="loaded page-pad"><div className="section-heading row"><div><Sticker color="yellow">LIBRARY STATUS</Sticker><h2>10 REACTIONS LOADED</h2></div><Link href="/memes" className="text-link">VIEW ALL <ChevronRight size={16}/></Link></div><div className="meme-grid mini">{memes.slice(0, 5).map((m, i)=><MemeCard meme={m} key={m.name} index={i}/>)}</div></section>
-    <section className="chaos page-pad"><div><Sticker color="pink">BUILT FOR CHAOS</Sticker><h2>THE CAMERA<br /><em>GETS IT.</em></h2></div><div className="chaos-list">{['FACE REACTIONS','HAND GESTURES','EYE DIRECTION','HEAD MOVEMENT','CUSTOM TRIGGERS'].map((x,i)=><div key={x}><span>0{i+1}</span><strong>{x}</strong><ChevronRight /></div>)}</div></section>
+    <section className="hero page-pad"><div className="hero-copy"><Sticker>BENKASOT ●</Sticker><h1>MAKE FACES.<br />MAKE GESTURES.<br /><em>GET MEMES.</em></h1><p className="hero-sub">Your webcam watches the chaos. Your expressions and gestures trigger the reaction — all processed locally in your browser.</p><div className="hero-actions"><Link href="/camera" className="brutal-btn pink">OPEN CAMERA <ChevronRight size={18}/></Link><Link href="/memes" className="brutal-btn white">MEMES</Link><Link href="/memes/create" className="brutal-btn yellow">CREATE MEME</Link></div><div className="badges"><Sticker color="mint">BROWSER-BASED</Sticker><Sticker color="blue">REAL-TIME</Sticker></div></div></section>
   </main></Shell>
 }
 
@@ -164,6 +164,126 @@ function LandmarkOverlay({ enabled, video, faceLandmarks, handLandmarks }: { ena
 }
 
 
+// ---------------------------------------------------------------------------
+// Shared AR positioning. Both the live overlay and the MEME NOW capture derive
+// the meme placement from this single anchor so the exported image matches the
+// viewport instead of using a second, unrelated positioning system.
+// ---------------------------------------------------------------------------
+const MEME_WIDTH_FACTOR = 2.15
+const MEME_MIN_WIDTH = 0.12
+const MEME_MAX_WIDTH = 0.65
+const PINK = '#ff5e88'
+const INK = '#111'
+
+interface FaceAnchor {
+  centerX: number
+  centerY: number
+  faceWidth: number
+  angleDeg: number
+}
+
+function getFaceAnchor(face: NormalizedLandmark[] | undefined): FaceAnchor | null {
+  if (!face?.length) return null
+
+  const xs = face.map((point) => point.x)
+  const ys = face.map((point) => point.y)
+  const minX = Math.min(...xs)
+  const maxX = Math.max(...xs)
+  const minY = Math.min(...ys)
+  const maxY = Math.max(...ys)
+  const leftEye = face[33]
+  const rightEye = face[263]
+  const angleDeg = leftEye && rightEye
+    ? (Math.atan2(rightEye.y - leftEye.y, rightEye.x - leftEye.x) * 180) / Math.PI
+    : 0
+
+  return {
+    centerX: (minX + maxX) / 2,
+    centerY: (minY + maxY) / 2,
+    faceWidth: Math.max(0.08, maxX - minX),
+    angleDeg,
+  }
+}
+
+// Meme width as a fraction of the frame width, clamped like the live overlay.
+function memeWidthFraction(anchor: FaceAnchor, scale: number): number {
+  return Math.min(MEME_MAX_WIDTH, Math.max(MEME_MIN_WIDTH, anchor.faceWidth * MEME_WIDTH_FACTOR * scale))
+}
+
+function loadImage(src: string): Promise<HTMLImageElement | null> {
+  return new Promise((resolve) => {
+    const img = new Image()
+    img.onload = () => resolve(img)
+    img.onerror = () => resolve(null)
+    img.src = src
+  })
+}
+
+// Mirrors the .meme-ar-fallback box shown in the viewport when a built-in meme
+// image is unavailable.
+function drawMemeFallback(ctx: CanvasRenderingContext2D, label: string, width: number) {
+  const height = Math.max(60, width * 0.5)
+  const border = Math.max(3, width * 0.03)
+  ctx.fillStyle = PINK
+  ctx.fillRect(-width / 2, -height / 2, width, height)
+  ctx.lineWidth = border
+  ctx.strokeStyle = INK
+  ctx.strokeRect(-width / 2, -height / 2, width, height)
+  ctx.fillStyle = INK
+  ctx.textAlign = 'center'
+  ctx.textBaseline = 'middle'
+  ctx.font = `900 ${Math.max(10, width * 0.06)}px monospace`
+  ctx.fillText('BENKASOT', 0, -height * 0.18)
+  ctx.font = `950 ${Math.max(16, width * 0.16)}px Arial`
+  ctx.fillText(label, 0, height * 0.14)
+}
+
+// Composite the current camera frame + active meme into a PNG blob, entirely in
+// the browser. Nothing is uploaded.
+async function composeMemeCapture(
+  video: HTMLVideoElement,
+  meme: Meme | null,
+  face: NormalizedLandmark[] | undefined,
+  drawMeme: boolean,
+): Promise<Blob | null> {
+  const width = video.videoWidth
+  const height = video.videoHeight
+  if (!width || !height) return null
+
+  const canvas = document.createElement('canvas')
+  canvas.width = width
+  canvas.height = height
+  const ctx = canvas.getContext('2d')
+  if (!ctx) return null
+
+  ctx.drawImage(video, 0, 0, width, height)
+
+  if (meme && drawMeme) {
+    const anchor = getFaceAnchor(face)
+    if (anchor) {
+      const overlay = meme.overlay
+      const memeWidth = memeWidthFraction(anchor, overlay.scale) * width
+      const centerX = anchor.centerX * width + (overlay.offsetX / 100) * width
+      const centerY = anchor.centerY * height + (overlay.offsetY / 100) * height
+      const angle = ((anchor.angleDeg + overlay.rotation) * Math.PI) / 180
+      const img = await loadImage(meme.imagePath)
+
+      ctx.save()
+      ctx.translate(centerX, centerY)
+      ctx.rotate(angle)
+      if (img && img.naturalWidth > 0) {
+        const memeHeight = memeWidth * (img.naturalHeight / img.naturalWidth)
+        ctx.drawImage(img, -memeWidth / 2, -memeHeight / 2, memeWidth, memeHeight)
+      } else {
+        drawMemeFallback(ctx, meme.shortLabel, memeWidth)
+      }
+      ctx.restore()
+    }
+  }
+
+  return await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/png'))
+}
+
 function MemeAROverlay({ meme, video, faceLandmarks }: { meme: Meme | null; video: HTMLVideoElement | null; faceLandmarks: React.MutableRefObject<import('@mediapipe/tasks-vision').NormalizedLandmark[][]> }) {
   const [failedImage, setFailedImage] = useState<string | null>(null)
   const [pose, setPose] = useState({ x: 50, y: 42, width: 28, angle: 0 })
@@ -176,22 +296,9 @@ function MemeAROverlay({ meme, video, faceLandmarks }: { meme: Meme | null; vide
       const canvas = video.parentElement
       const width = canvas?.clientWidth ?? 0
       const height = canvas?.clientHeight ?? 0
-      const face = faceLandmarks.current[0]
+      const anchor = getFaceAnchor(faceLandmarks.current[0])
 
-      if (width && height && face?.length) {
-        const xs = face.map(point => point.x)
-        const ys = face.map(point => point.y)
-        const minX = Math.min(...xs)
-        const maxX = Math.max(...xs)
-        const minY = Math.min(...ys)
-        const maxY = Math.max(...ys)
-        const centerX = (minX + maxX) / 2
-        const centerY = (minY + maxY) / 2
-        const faceWidth = Math.max(0.08, maxX - minX)
-        const leftEye = face[33]
-        const rightEye = face[263]
-        const angle = leftEye && rightEye ? Math.atan2(rightEye.y - leftEye.y, rightEye.x - leftEye.x) * 180 / Math.PI : 0
-
+      if (width && height && anchor) {
         const videoWidth = video.videoWidth || width
         const videoHeight = video.videoHeight || height
         const scale = Math.max(width / videoWidth, height / videoHeight)
@@ -200,15 +307,15 @@ function MemeAROverlay({ meme, video, faceLandmarks }: { meme: Meme | null; vide
         const offsetX = (width - renderedWidth) / 2
         const offsetY = (height - renderedHeight) / 2
 
-        const screenX = offsetX + centerX * renderedWidth
-        const screenY = offsetY + centerY * renderedHeight
-        const screenFaceWidth = faceWidth * renderedWidth
+        const screenX = offsetX + anchor.centerX * renderedWidth
+        const screenY = offsetY + anchor.centerY * renderedHeight
+        const screenFaceWidth = anchor.faceWidth * renderedWidth
 
         setPose({
           x: (screenX / width) * 100 + meme.overlay.offsetX,
           y: (screenY / height) * 100 + meme.overlay.offsetY,
-          width: Math.max(12, Math.min(65, (screenFaceWidth / width) * 100 * 2.15 * meme.overlay.scale)),
-          angle: angle + meme.overlay.rotation,
+          width: Math.max(12, Math.min(65, (screenFaceWidth / width) * 100 * MEME_WIDTH_FACTOR * meme.overlay.scale)),
+          angle: anchor.angleDeg + meme.overlay.rotation,
         })
       }
 
@@ -249,27 +356,88 @@ function MemeAROverlay({ meme, video, faceLandmarks }: { meme: Meme | null; vide
 
 function CameraPage() {
   const camera = useCamera()
-  const [overlay, setOverlay] = useState(true)
+  const [settings, setSettings] = useState<AppSettings>(() => loadSettings())
   const [goatBot, setGoatBot] = useState(false)
   const [debugMode, setDebugMode] = useState(false)
+  const [capture, setCapture] = useState<{ url: string; blob: Blob } | null>(null)
+  const [capturing, setCapturing] = useState(false)
+  const [captureError, setCaptureError] = useState('')
+  const startDeviceRef = useRef<string | null>(settings.preferredDeviceId)
 
   useEffect(() => {
-    void camera.start()
+    void camera.start(startDeviceRef.current ?? undefined)
     return () => camera.stop()
   }, [camera.start, camera.stop])
 
+  const persistDevice = (deviceId: string) => {
+    startDeviceRef.current = deviceId
+    setSettings((current) => {
+      const next = { ...current, preferredDeviceId: deviceId }
+      saveSettings(next)
+      return next
+    })
+  }
+
   const isActive = camera.status === 'active'
   const isRequesting = camera.status === 'requesting'
-  const face = useFaceLandmarker(camera.videoRef, isActive)
-  const hands = useHandLandmarker(camera.videoRef, isActive)
-  const analysis = useExpressionGestureDetection(face.landmarksRef, hands.landmarksRef, hands.handednessRef, isActive)
-  const memeEngine = useMemeTriggerEngine(analysis, face.landmarksRef, hands.landmarksRef, isActive)
+  const detectionOn = isActive && settings.detection
+  const face = useFaceLandmarker(camera.videoRef, detectionOn)
+  const hands = useHandLandmarker(camera.videoRef, detectionOn)
+  const analysis = useExpressionGestureDetection(face.landmarksRef, hands.landmarksRef, hands.handednessRef, detectionOn)
+  const memeEngine = useMemeTriggerEngine(analysis, face.landmarksRef, hands.landmarksRef, detectionOn)
 
   // activeMeme is only non-null when all of that meme's required groups match.
   const activeMeme = memeEngine.activeMeme
   const activeMatch = activeMeme
     ? memeEngine.matches.find(match => match.meme.id === activeMeme.id)
     : null
+
+  const closeCapture = () => {
+    setCapture((current) => {
+      if (current) URL.revokeObjectURL(current.url)
+      return null
+    })
+    setCaptureError('')
+  }
+
+  const handleMemeNow = async () => {
+    const video = camera.videoRef.current
+    if (!video || !isActive || capturing) return
+    setCapturing(true)
+    setCaptureError('')
+    try {
+      const blob = await composeMemeCapture(
+        video,
+        settings.arOverlay && analysis.facePresent ? activeMeme : null,
+        face.landmarksRef.current[0],
+        true,
+      )
+      if (!blob) {
+        setCaptureError('Could not capture the frame.')
+        return
+      }
+      setCapture((current) => {
+        if (current) URL.revokeObjectURL(current.url)
+        return { url: URL.createObjectURL(blob), blob }
+      })
+    } catch {
+      setCaptureError('Could not capture the frame.')
+    } finally {
+      setCapturing(false)
+    }
+  }
+
+  const downloadCapture = () => {
+    if (!capture) return
+    const link = document.createElement('a')
+    link.href = capture.url
+    link.download = `benkasot-${Date.now()}.png`
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+  }
+
+  useEffect(() => () => { if (capture) URL.revokeObjectURL(capture.url) }, [capture])
 
   return <Shell><main className="camera-page page-pad">
     <div className="camera-topline"><div><Sticker color={isActive ? 'mint' : camera.status === 'denied' || camera.status === 'unavailable' || camera.status === 'error' ? 'pink' : 'yellow'}>● {isActive ? 'CAMERA LIVE' : isRequesting ? 'REQUESTING CAMERA' : 'CAMERA OFF'}</Sticker><span className="technical">{camera.devices.length ? `${camera.devices.length} CAMERA${camera.devices.length === 1 ? '' : 'S'} AVAILABLE` : 'CAMERA DEVICE'}</span></div><div className="technical">MEDIAPIPE FACE + HAND · LOCAL ONLY</div></div>
@@ -279,15 +447,15 @@ function CameraPage() {
         <div className="camera-viewport">
           <video ref={camera.videoRef} autoPlay muted playsInline aria-label="Live camera preview" />
           <LandmarkOverlay enabled={goatBot && isActive} video={camera.videoRef.current} faceLandmarks={face.landmarksRef} handLandmarks={hands.landmarksRef} />
-          {!isActive && <div className="camera-status-message"><strong>{isRequesting ? 'ALLOW CAMERA ACCESS' : camera.status === 'idle' ? 'CAMERA STOPPED' : 'CAMERA UNAVAILABLE'}</strong><span>{camera.error ?? 'Your live camera preview will appear here.'}</span>{camera.status !== 'denied' && camera.status !== 'unavailable' && camera.status !== 'error' && <Button accent="pink" onClick={() => void camera.start()}>START CAMERA</Button>}{camera.status === 'denied' && <Button accent="pink" onClick={() => void camera.start()}>TRY AGAIN</Button>}</div>}
+          {!isActive && <div className="camera-status-message"><strong>{isRequesting ? 'ALLOW CAMERA ACCESS' : camera.status === 'idle' ? 'CAMERA STOPPED' : 'CAMERA UNAVAILABLE'}</strong><span>{camera.error ?? 'Your live camera preview will appear here.'}</span>{camera.status !== 'denied' && camera.status !== 'unavailable' && camera.status !== 'error' && <Button accent="pink" onClick={() => void camera.start(settings.preferredDeviceId ?? undefined)}>START CAMERA</Button>}{camera.status === 'denied' && <Button accent="pink" onClick={() => void camera.start(settings.preferredDeviceId ?? undefined)}>TRY AGAIN</Button>}</div>}
           {/* Meme AR overlay only appears after a meme's full requirement is met. */}
-          {activeMeme && isActive && analysis.facePresent && <MemeAROverlay meme={activeMeme} video={camera.videoRef.current} faceLandmarks={face.landmarksRef} />}
+          {settings.arOverlay && activeMeme && isActive && analysis.facePresent && <MemeAROverlay meme={activeMeme} video={camera.videoRef.current} faceLandmarks={face.landmarksRef} />}
         </div>
         <div className="camera-controls">
-          <Button onClick={() => isActive ? camera.stop() : void camera.start()} accent="white">{isActive ? <Pause size={16}/> : <Play size={16}/>} {isActive ? 'STOP' : 'START'}</Button>
+          <Button onClick={() => isActive ? camera.stop() : void camera.start(settings.preferredDeviceId ?? undefined)} accent="white">{isActive ? <Pause size={16}/> : <Play size={16}/>} {isActive ? 'STOP' : 'START'}</Button>
           <Button accent={goatBot ? 'yellow' : 'white'} onClick={() => setGoatBot((value) => !value)}><Cpu size={16}/> GOAT BOT {goatBot ? 'ON' : 'OFF'}</Button>
           <Button accent={debugMode ? 'yellow' : 'white'} onClick={() => setDebugMode((value) => !value)}><SlidersHorizontal size={16}/> DEBUG {debugMode ? 'ON' : 'OFF'}</Button>
-          <Button accent="pink" className="meme-now" disabled>MEME NOW <Zap size={16}/></Button>
+          <Button accent="pink" className="meme-now" disabled={!isActive || capturing} onClick={() => void handleMemeNow()}>MEME NOW <Zap size={16}/></Button>
         </div>
       </section>
       <aside className="detect-panel">
@@ -314,7 +482,7 @@ function CameraPage() {
         </div>
 
         {debugMode && <div className="analysis-box debug-box">
-          <div className="analysis-heading"><span>PHASE 12 // DEBUG</span><b>LIVE</b></div>
+          <div className="analysis-heading"><span>MATCH ENGINE // DEBUG</span><b>LIVE</b></div>
           <div className="analysis-grid debug-grid">
             <span>CANDIDATE</span><strong>{memeEngine.debug.candidateId ? (memeEngine.matches.find(match => match.meme.id === memeEngine.debug.candidateId)?.meme.shortLabel ?? memeEngine.debug.candidateId) : 'NONE'}</strong>
             <span>CANDIDATE SCORE</span><strong>{memeEngine.debug.candidateScore}%</strong>
@@ -338,29 +506,64 @@ function CameraPage() {
             {analysis.handGestures.length ? analysis.handGestures.map((hand, index) => <div className="gesture-row" key={hand.handedness + index}><span>{hand.handedness === 'Hand' ? `HAND ${index + 1}` : hand.handedness}</span><strong>{hand.gesture}</strong></div>) : <div className="gesture-empty">NO HAND GESTURE DETECTED</div>}
           </div>
         </div>
-        {camera.devices.length > 0 && <div className="trigger"><div className="trigger-title"><span>CAMERA DEVICE</span></div>{camera.devices.map((device) => <label className="toggle" key={device.deviceId}><span>{device.label}</span><input type="radio" name="camera-device" checked={device.deviceId === camera.selectedDeviceId} onChange={() => void camera.selectDevice(device.deviceId)}/><i/></label>)}</div>}
-        <div className="trigger"><div className="trigger-title"><span>GOAT BOT</span><b>{goatBot ? 'VISUALIZER ON' : 'VISUALIZER OFF'}</b></div><p>Show the live face + hand landmarks as a thin local debug mesh.</p><small>DOTS + STRINGS → CAMERA ONLY</small></div><div className="trigger"><div className="trigger-title"><span>PHASE 9</span><b>AR OVERLAY</b></div><p>The stable top meme now follows the detected face in the live viewport. Overlay position, scale and rotation come from local landmarks.</p><small>FACE → ANCHOR → MEME IMAGE</small></div>
-        <label className="toggle"><span>SHOW MOCK MEME</span><input type="checkbox" checked={overlay} onChange={(event) => setOverlay(event.target.checked)}/><i/></label>
+        {camera.devices.length > 0 && <div className="trigger"><div className="trigger-title"><span>CAMERA DEVICE</span></div>{camera.devices.map((device) => <label className="toggle" key={device.deviceId}><span>{device.label}</span><input type="radio" name="camera-device" checked={device.deviceId === camera.selectedDeviceId} onChange={() => { void camera.selectDevice(device.deviceId); persistDevice(device.deviceId) }}/><i/></label>)}</div>}
+        <div className="trigger"><div className="trigger-title"><span>GOAT BOT</span><b>{goatBot ? 'VISUALIZER ON' : 'VISUALIZER OFF'}</b></div><p>Show the live face + hand landmarks as a thin local debug mesh.</p><small>DOTS + STRINGS → CAMERA ONLY</small></div>
       </aside>
     </div>
+    {capture && <div className="capture-modal" role="dialog" aria-modal="true" aria-label="Captured meme" onClick={closeCapture}>
+      <div className="capture-card" onClick={(event) => event.stopPropagation()}>
+        <div className="capture-head"><span>CAPTURED MEME</span><button type="button" className="capture-close" aria-label="Close" onClick={closeCapture}>✕</button></div>
+        <div className="capture-frame"><img src={capture.url} alt="Captured camera frame with meme overlay" /></div>
+        <div className="capture-actions"><Button accent="white" onClick={closeCapture}>CLOSE</Button><Button accent="pink" onClick={downloadCapture}>SAVE / DOWNLOAD</Button></div>
+      </div>
+    </div>}
+    {captureError && !capture && <div className="capture-toast" role="status">{captureError}</div>}
   </main></Shell>
 }
 function LibraryPage() {
   const [allMemes, setAllMemes] = useState(getAllMemes())
+  const [query, setQuery] = useState('')
+  const [categories, setCategories] = useState<MemeConditionCategory[]>([])
+  const [activeOnly, setActiveOnly] = useState(false)
+  const [sort, setSort] = useState<'default' | 'az' | 'za'>('default')
 
   useEffect(() => {
+    void ensureMemesLoaded()
     setAllMemes(getAllMemes())
+    return subscribeMemes(() => setAllMemes(getAllMemes()))
   }, [])
 
-  const handleDelete = (id: string) => {
+  const handleDelete = async (id: string) => {
     const meme = getAllMemes().find((item) => item.id === id)
     if (!meme) return
     if (!window.confirm(`Delete "${meme.name}"?`)) return
-    deleteMeme(id)
-    setAllMemes(getAllMemes())
+    try {
+      await deleteMeme(id)
+      setAllMemes(getAllMemes())
+    } catch {
+      window.alert('Could not delete that meme from local storage. Please try again.')
+    }
   }
 
-  return <Shell><main className="page-pad content-page"><div className="page-title"><Sticker color="yellow">THE REACTION BANK</Sticker><h1>MEME LIBRARY</h1><p>{allMemes.length} reactions ready to destroy your camera.</p></div><div className="library-tools"><div className="search">⌕ <input placeholder="SEARCH MEMES..." /></div>{['FACE','HAND','MOVEMENT','ACTIVE'].map(x=><Button accent="white" key={x}>{x}</Button>)}<Button accent="black"><SlidersHorizontal size={16}/> SORT</Button></div><div className="meme-grid">{allMemes.map((m,i)=><MemeCard meme={m} index={i} key={m.id} onDelete={handleDelete}/>)}<Link href="/memes/create" className="create-card"><Plus size={28}/><strong>CREATE NEW MEME</strong><span>Build a reaction from scratch →</span></Link></div></main></Shell>
+  const toggleCategory = (category: MemeConditionCategory) =>
+    setCategories((current) => current.includes(category) ? current.filter((item) => item !== category) : [...current, category])
+
+  const visibleMemes = useMemo(() => {
+    const needle = query.trim().toLowerCase()
+    const filtered = allMemes.filter((meme) => {
+      if (needle && !`${meme.name} ${meme.description}`.toLowerCase().includes(needle)) return false
+      if (activeOnly && !meme.enabled) return false
+      if (categories.length && !meme.trigger.conditions.some((condition) => categories.includes(condition.category))) return false
+      return true
+    })
+    if (sort === 'az') return [...filtered].sort((a, b) => a.name.localeCompare(b.name))
+    if (sort === 'za') return [...filtered].sort((a, b) => b.name.localeCompare(a.name))
+    return filtered
+  }, [allMemes, query, activeOnly, categories, sort])
+
+  const categoryButtons: [string, MemeConditionCategory][] = [['FACE', 'face'], ['HAND', 'hand'], ['MOVEMENT', 'movement']]
+
+  return <Shell><main className="page-pad content-page"><div className="page-title"><Sticker color="yellow">THE REACTION BANK</Sticker><h1>MEME LIBRARY</h1><p>{visibleMemes.length} of {allMemes.length} reactions shown.</p></div><div className="library-tools"><div className="search">⌕ <input placeholder="SEARCH MEMES..." value={query} onChange={(event) => setQuery(event.target.value)} /></div>{categoryButtons.map(([label, value]) => <Button accent={categories.includes(value) ? 'yellow' : 'white'} key={value} onClick={() => toggleCategory(value)}>{label}</Button>)}<Button accent={activeOnly ? 'yellow' : 'white'} onClick={() => setActiveOnly((value) => !value)}>ACTIVE</Button><select className="brutal-btn white sort-select" value={sort} onChange={(event) => setSort(event.target.value as typeof sort)} aria-label="Sort memes"><option value="default">SORT: DEFAULT</option><option value="az">NAME A-Z</option><option value="za">NAME Z-A</option></select></div><div className="meme-grid">{visibleMemes.map((m,i)=><MemeCard meme={m} index={i} key={m.id} onDelete={handleDelete}/>)}<Link href="/memes/create" className="create-card"><Plus size={28}/><strong>CREATE NEW MEME</strong><span>Build a reaction from scratch →</span></Link></div>{visibleMemes.length === 0 && <p className="technical library-empty">NO MEMES MATCH THESE FILTERS.</p>}</main></Shell>
 }
 
 function CreateMemePage() {
@@ -374,17 +577,25 @@ function CreateMemePage() {
   const [editId, setEditId] = useState<string | null>(null)
 
   useEffect(() => {
+    let active = true
     const id = new URLSearchParams(window.location.search).get('edit')
     if (!id) return
-    const existing = getMemeById(id)
-    if (!existing) return
 
-    setEditId(existing.id)
-    setName(existing.name)
-    setImagePath(existing.imagePath)
-    setImageName(existing.source === 'custom' ? 'CURRENT CUSTOM IMAGE' : 'CURRENT BUILT-IN IMAGE')
-    setMode(existing.trigger.type === 'combined' ? 'combined' : existing.trigger.type === 'gesture' ? 'gesture' : 'expression')
-    setSelectedConditions(existing.trigger.conditions.filter((condition) => condition.enabled !== false).map((condition) => condition.value))
+    void (async () => {
+      await ensureMemesLoaded()
+      if (!active) return
+      const existing = getMemeById(id)
+      if (!existing) return
+
+      setEditId(existing.id)
+      setName(existing.name)
+      setImagePath(existing.imagePath)
+      setImageName(existing.source === 'custom' ? 'CURRENT CUSTOM IMAGE' : 'CURRENT BUILT-IN IMAGE')
+      setMode(existing.trigger.type === 'combined' ? 'combined' : existing.trigger.type === 'gesture' ? 'gesture' : 'expression')
+      setSelectedConditions(existing.trigger.conditions.filter((condition) => condition.enabled !== false).map((condition) => condition.value))
+    })()
+
+    return () => { active = false }
   }, [])
 
    const faceOptions: Array<{ value: MemeConditionValue; label: string }> = [
@@ -551,7 +762,7 @@ function CreateMemePage() {
   }
 }
 
-  const saveMeme = () => {
+  const saveMeme = async () => {
     if (!name.trim() || !imagePath) {
       setError('Add a meme image and name before saving.')
       return
@@ -560,6 +771,8 @@ function CreateMemePage() {
       setError('Choose at least one trigger condition.')
       return
     }
+
+    await ensureMemesLoaded()
 
     const conditions = selectedConditions.map(buildCondition)
     const normalizedName = name.trim().toUpperCase()
@@ -622,14 +835,20 @@ function CreateMemePage() {
       },
     }
 
-    addCustomMeme(meme)
-    setSaved(true)
-    setError('')
+    try {
+      await addCustomMeme(meme)
+      setSaved(true)
+      setError('')
+    } catch {
+      // Persistence failed: keep the editor data so nothing is lost.
+      setSaved(false)
+      setError('Could not save to your browser storage. Your meme is still here — please try again.')
+    }
   }
 
   return <Shell><main className="page-pad content-page create-meme-page">
     <div className="page-title">
-      <Sticker color="pink">{editId ? 'PHASE 10 / EDIT MEME' : 'PHASE 10 / CUSTOM BUILDER'}</Sticker>
+      <Sticker color="pink">{editId ? 'EDIT MEME' : 'CUSTOM BUILDER'}</Sticker>
       <h1>{editId ? <>EDIT YOUR<br /><em>MEME.</em></> : <>MAKE YOUR<br /><em>OWN MEME.</em></>}</h1>
       <p>Upload the reaction. Pick one or more signals. Combine face and hand conditions for precise reactions.</p>
     </div>
@@ -664,32 +883,67 @@ function CreateMemePage() {
         </div>
         <div className="custom-note-inline">Same-feature conditions are alternatives (OR). Different features combine together. Example: HAPPY + SAD + OPEN MOUTH means (HAPPY OR SAD) + OPEN MOUTH. Duplicate names and trigger sets are blocked.</div>
         <div className="custom-actions">
-          <Button accent="pink" onClick={saveMeme}><Zap size={16}/> {saved ? 'SAVED TO SESSION' : editId ? 'UPDATE MEME' : 'SAVE CUSTOM MEME'}</Button>
+          <Button accent="pink" onClick={() => void saveMeme()}><Zap size={16}/> {saved ? 'SAVED' : editId ? 'UPDATE MEME' : 'SAVE CUSTOM MEME'}</Button>
           {saved && <Link href="/camera" className="brutal-btn white">TEST IN CAMERA →</Link>}
         </div>
         {error && <div className="custom-error">{error}</div>}
       </section>
     </div>
+  </main></Shell>
+}
 
-    <div className="custom-note">
-      <Sticker color="yellow">PHASE 10 NOTE</Sticker>
-      <p>Custom memes are kept in memory for this browser session. Nothing is uploaded to a server and nothing is permanently stored yet. Persistent storage arrives in Phase 12.</p>
+function AboutDiagram(){return <div className="diagram">{['CAMERA','VISION ENGINE','FACE + HAND LANDMARKS','EXPRESSION / GESTURE','MEME MATCHER','AR OVERLAY'].map((x,i)=><div key={x}><strong>{x}</strong>{i<5 && <ChevronRight/>}</div>)}</div>}
+
+function SettingsPage() {
+  const [settings, setSettings] = useState<AppSettings>(() => loadSettings())
+  const [devices, setDevices] = useState<MediaDeviceInfo[]>([])
+
+  useEffect(() => {
+    let active = true
+    const load = async () => {
+      try {
+        const list = await navigator.mediaDevices.enumerateDevices()
+        if (active) setDevices(list.filter((device) => device.kind === 'videoinput'))
+      } catch {
+        if (active) setDevices([])
+      }
+    }
+    void load()
+    return () => { active = false }
+  }, [])
+
+  const update = (patch: Partial<AppSettings>) =>
+    setSettings((current) => {
+      const next = { ...current, ...patch }
+      saveSettings(next)
+      return next
+    })
+
+  return <Shell><main className="page-pad content-page">
+    <div className="page-title"><Sticker color="blue">PREFERENCES / DEBUG / PRIVACY</Sticker><h1>SETTINGS</h1><p>Tune the machine to your particular brand of chaos.</p></div>
+    <div className="generic-layout">
+      <section className="big-panel">
+        <div className="panel-heading"><span>SETTINGS WORKSPACE</span><Cpu size={17}/></div>
+        <div className="settings-rows">
+          <label className="toggle"><span>DETECTION — RUN FACE + HAND VISION</span><input type="checkbox" checked={settings.detection} onChange={(event) => update({ detection: event.target.checked })}/><i/></label>
+          <label className="toggle"><span>AR OVERLAY — SHOW MATCHED MEME ON FACE</span><input type="checkbox" checked={settings.arOverlay} onChange={(event) => update({ arOverlay: event.target.checked })}/><i/></label>
+        </div>
+        <div className="trigger">
+          <div className="trigger-title"><span>CAMERA DEVICE</span><b>{devices.length ? `${devices.length} FOUND` : 'NONE'}</b></div>
+          {devices.length
+            ? devices.map((device, index) => <label className="toggle" key={device.deviceId || index}><span>{device.label || `CAMERA ${index + 1}`}</span><input type="radio" name="settings-camera-device" checked={settings.preferredDeviceId === device.deviceId} onChange={() => update({ preferredDeviceId: device.deviceId })}/><i/></label>)
+            : <p className="technical">No camera devices listed yet. Grant camera access on the CAMERA page, then return here to pick a default device.</p>}
+        </div>
+      </section>
+      <aside className="side-note"><Sticker color="yellow">PRIVACY</Sticker><h2>LOCAL PROCESSING.</h2><p>Camera frames are processed locally in your browser. Nothing is uploaded to a server.</p></aside>
     </div>
   </main></Shell>
 }
 
-function SettingsRows(){return <div className="settings-rows">{['CAMERA','AUDIO','DETECTION','OVERLAY','PRIVACY','PERFORMANCE','APPEARANCE'].map((x,i)=><div className="settings-row" key={x}><span>{x}</span><b>{i===4?'LOCAL PROCESSING ENABLED':'CONFIGURE'}</b><ChevronRight size={16}/></div>)}</div>}
-function AboutDiagram(){return <div className="diagram">{['CAMERA','VISION ENGINE','FACE + HAND LANDMARKS','EXPRESSION / GESTURE','MEME MATCHER','AR OVERLAY'].map((x,i)=><div key={x}><strong>{x}</strong>{i<5 && <ChevronRight/>}</div>)}</div>}
-
-function GenericPage({ kind }: { kind: string }) {
-  const config: Record<string,[string,string,string]> = {
-    settings:['SETTINGS','Tune the machine to your particular brand of chaos.','PREFERENCES / DEBUG / PRIVACY'],
-    about:['HOW IT WORKS','Sophisticated computer vision. Extremely unserious output.','CAMERA → VISION → MATCH → REACT']
-  }
-  const [title, sub, kicker] = config[kind] || config.about
-  return <Shell><main className="page-pad content-page generic"><div className="page-title"><Sticker color={kind==='settings'?'blue':'pink'}>{kicker}</Sticker><h1>{title}</h1><p>{sub}</p></div><div className="generic-layout"><section className="big-panel"><div className="panel-heading"><span>{kind === 'about' ? 'SYSTEM DIAGRAM' : kind.toUpperCase() + ' WORKSPACE'}</span><Cpu size={17}/></div>{kind === 'settings' && <SettingsRows/>}{kind === 'about' && <AboutDiagram/>}</section><aside className="side-note"><Sticker color="yellow">STATUS</Sticker><h2>VISION ONLINE.</h2><p>Everything here is a demo state, ready for MediaPipe to take over in VS Code.</p><Button accent="black">OPEN CAMERA <ChevronRight size={15}/></Button></aside></div></main></Shell>
+function AboutPage() {
+  return <Shell><main className="page-pad content-page generic"><div className="page-title"><Sticker color="pink">CAMERA → VISION → MATCH → REACT</Sticker><h1>HOW IT WORKS</h1><p>Sophisticated computer vision. Extremely unserious output.</p></div><div className="generic-layout"><section className="big-panel"><div className="panel-heading"><span>SYSTEM DIAGRAM</span><Cpu size={17}/></div><AboutDiagram/></section><aside className="side-note"><Sticker color="yellow">PRIVACY</Sticker><h2>LOCAL PROCESSING.</h2><p>Face and hand detection runs in your browser with MediaPipe. Camera frames never leave your device.</p></aside></div></main></Shell>
 }
 
-export default function MemeVisionApp(){ const path=usePathname(); if(path==='/') return <Home/>; if(path==='/camera') return <CameraPage/>; if(path==='/memes') return <LibraryPage/>; if(path==='/memes/create') return <CreateMemePage/>; if(path==='/settings') return <GenericPage kind="settings"/>; return <GenericPage kind="about"/> }
+export default function MemeVisionApp(){ const path=usePathname(); if(path==='/') return <Home/>; if(path==='/camera') return <CameraPage/>; if(path==='/memes') return <LibraryPage/>; if(path==='/memes/create') return <CreateMemePage/>; if(path==='/settings') return <SettingsPage/>; return <AboutPage/> }
 
 export { Button, Logo, Shell, MemeCard, memes }

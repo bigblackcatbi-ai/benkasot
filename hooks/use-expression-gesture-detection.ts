@@ -152,14 +152,19 @@ function analyzeFace(face: NormalizedLandmark[] | undefined, eyeHistory: EyeHist
   const pitchPosition = (nose.y - minY) / Math.max(maxY - minY, 0.001)
 
   let headDirection: HeadDirection = 'FORWARD'
-  if (yawPosition < 0.43) headDirection = 'LEFT'
-  else if (yawPosition > 0.57) headDirection = 'RIGHT'
+  // The camera preview is NOT mirrored, so the user's real-world left appears on
+  // the image's right (nose.x increases). Map the yaw accordingly so the reported
+  // direction matches the way the user is actually looking.
+  if (yawPosition < 0.43) headDirection = 'RIGHT'
+  else if (yawPosition > 0.57) headDirection = 'LEFT'
   else if (pitchPosition < 0.40) headDirection = 'UP'
-  else if (pitchPosition > 0.55) headDirection = 'DOWN'
+  // DOWN requires a clearly deliberate nod: the old 0.55 margin fired on tiny
+  // movements, so raise it while keeping it reachable.
+  else if (pitchPosition > 0.62) headDirection = 'DOWN'
   else {
     const yawOffset = (nose.x - eyeCenterX) / eyeDistance
-    if (yawOffset < -0.12) headDirection = 'LEFT'
-    else if (yawOffset > 0.12) headDirection = 'RIGHT'
+    if (yawOffset < -0.12) headDirection = 'RIGHT'
+    else if (yawOffset > 0.12) headDirection = 'LEFT'
   }
 
   const browLeft = face[105].y - face[159].y

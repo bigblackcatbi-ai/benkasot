@@ -33,6 +33,13 @@ const COOLDOWN_MS = 200
 // window, it stays active instead of flickering off.
 const ACTIVE_GRACE_MS = 500
 
+// Short-lived stability window for head direction only. While a user holds a
+// pose, the detector can momentarily flip to FORWARD between frames. If a real
+// direction (UP/DOWN/LEFT/RIGHT) was seen within this window, a brief FORWARD
+// flicker keeps the last direction so the gaze condition stays satisfied. This
+// never cross-matches different directions.
+const HEAD_GRACE_MS = 300
+
 // Salute tuning. The hand must be an open/extended hand held beside the head at
 // brow/temple height. Distances are normalized against face width/height so the
 // pose works regardless of how far the user is from the camera.
@@ -170,6 +177,14 @@ function conditionMatches(
   if (condition.feature === 'gaze') {
     if (value === 'upward') {
       return analysis.headDirection === 'UP'
+    }
+
+    if (value === 'down') {
+      return analysis.headDirection === 'DOWN'
+    }
+
+    if (value === 'left') {
+      return analysis.headDirection === 'LEFT'
     }
 
     if (value === 'right') {
@@ -662,6 +677,13 @@ export function useMemeTriggerEngine(
   const activeLostSinceRef =
     useRef(0)
 
+  // Last real head direction and when it was seen, used for the short-lived
+  // HEAD_GRACE_MS stability window against brief FORWARD flicker.
+  const lastHeadDirRef =
+    useRef<VisionAnalysisState['headDirection']>('FORWARD')
+  const lastHeadDirTimeRef =
+    useRef(0)
+
   useEffect(() => {
     analysisRef.current = analysis
   }, [analysis])
@@ -676,6 +698,8 @@ export function useMemeTriggerEngine(
       candidateFramesRef.current = 0
       cooldownUntilRef.current = 0
       activeLostSinceRef.current = 0
+      lastHeadDirRef.current = 'FORWARD'
+      lastHeadDirTimeRef.current = 0
 
       return
     }
@@ -691,6 +715,33 @@ export function useMemeTriggerEngine(
         handLandmarks.current
 
       // ---------------------------------------
+      // STABILIZE HEAD DIRECTION
+      // ---------------------------------------
+      // Hold the last real direction through a brief FORWARD flicker so a held
+      // pose keeps matching. Only FORWARD is bridged; a different real direction
+      // or NO FACE is used as-is, so directions never cross-match.
+      const rawHead = currentAnalysis.headDirection
+      const headNow = Date.now()
+      if (
+        rawHead === 'UP' ||
+        rawHead === 'DOWN' ||
+        rawHead === 'LEFT' ||
+        rawHead === 'RIGHT'
+      ) {
+        lastHeadDirRef.current = rawHead
+        lastHeadDirTimeRef.current = headNow
+      }
+      const effectiveHead =
+        rawHead === 'FORWARD' &&
+        headNow - lastHeadDirTimeRef.current <= HEAD_GRACE_MS
+          ? lastHeadDirRef.current
+          : rawHead
+      const stableAnalysis =
+        effectiveHead === rawHead
+          ? currentAnalysis
+          : { ...currentAnalysis, headDirection: effectiveHead }
+
+      // ---------------------------------------
       // EVALUATE EVERY MEME
       // ---------------------------------------
 
@@ -699,7 +750,7 @@ export function useMemeTriggerEngine(
         .map((meme) =>
           matchMeme(
             meme,
-            currentAnalysis,
+            stableAnalysis,
             face,
             hands,
           ),

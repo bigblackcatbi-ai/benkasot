@@ -1,4 +1,5 @@
 import type { Meme } from '@/types/meme'
+import * as storage from './meme-storage'
 
 const defaultOverlay: Meme['overlay'] = {
   anchor: 'face',
@@ -238,48 +239,92 @@ export const memes: readonly Meme[] = [
 ]
 
 
-const STORAGE_KEY = 'meme-vision:memes:v1'
+const LEGACY_STORAGE_KEY = 'meme-vision:memes:v1'
 
+// In-memory mirror of IndexedDB. getAllMemes() must stay synchronous because the
+// trigger engine reads it every animation frame; async hydration fills this cache
+// and then notifies subscribers so React views re-render.
 let customMemes: Meme[] = []
 let deletedMemeIds = new Set<string>()
-let hydrated = false
+let hydrationPromise: Promise<void> | null = null
+const listeners = new Set<() => void>()
 
-function hydrateMemes(): void {
-  if (hydrated || typeof window === 'undefined') return
-  hydrated = true
+function notify(): void {
+  listeners.forEach((listener) => listener())
+}
 
-  try {
-    const raw = window.localStorage.getItem(STORAGE_KEY)
-    if (!raw) return
-
-    const stored = JSON.parse(raw) as {
-      customMemes?: Meme[]
-      deletedMemeIds?: string[]
-    }
-
-    if (Array.isArray(stored.customMemes)) customMemes = stored.customMemes
-    if (Array.isArray(stored.deletedMemeIds)) deletedMemeIds = new Set(stored.deletedMemeIds)
-  } catch {
-    // Corrupt or unavailable local storage should never break the camera.
+export function subscribeMemes(listener: () => void): () => void {
+  listeners.add(listener)
+  return () => {
+    listeners.delete(listener)
   }
 }
 
-function persistMemes(): void {
+// One-time migration of any memes saved by the old localStorage implementation.
+// Best-effort: obsolete data must never block or crash the app.
+async function migrateLegacyStorage(): Promise<void> {
   if (typeof window === 'undefined') return
 
+  let raw: string | null = null
   try {
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify({
-      customMemes,
-      deletedMemeIds: [...deletedMemeIds],
-    }))
+    raw = window.localStorage.getItem(LEGACY_STORAGE_KEY)
   } catch {
-    // Keep the current in-memory change even if storage quota is exceeded.
+    return
   }
+  if (!raw) return
+
+  try {
+    const stored = JSON.parse(raw) as { customMemes?: Meme[]; deletedMemeIds?: string[] }
+    const legacyCustom = Array.isArray(stored.customMemes) ? stored.customMemes : []
+    const legacyDeleted = Array.isArray(stored.deletedMemeIds) ? stored.deletedMemeIds : []
+
+    for (const meme of legacyCustom) {
+      if (meme && typeof meme.id === 'string') {
+        await storage.putCustomMeme(meme)
+      }
+    }
+
+    if (legacyDeleted.length) {
+      const existing = await storage.loadDeletedIds()
+      await storage.saveDeletedIds(Array.from(new Set([...existing, ...legacyDeleted])))
+    }
+
+    window.localStorage.removeItem(LEGACY_STORAGE_KEY)
+  } catch {
+    // Leave the legacy key in place so a future load can retry the migration.
+  }
+}
+
+export function ensureMemesLoaded(): Promise<void> {
+  if (typeof window === 'undefined') return Promise.resolve()
+
+  if (!hydrationPromise) {
+    hydrationPromise = (async () => {
+      await migrateLegacyStorage()
+      const [loadedCustom, loadedDeleted] = await Promise.all([
+        storage.loadAllCustomMemes(),
+        storage.loadDeletedIds(),
+      ])
+      customMemes = loadedCustom
+      deletedMemeIds = new Set(loadedDeleted)
+      notify()
+    })().catch((error) => {
+      // Built-in memes keep working even if local storage is unavailable.
+      hydrationPromise = null
+      console.warn('[BENKASOT] Custom meme storage unavailable:', error)
+    })
+  }
+
+  return hydrationPromise
+}
+
+// Start loading as soon as this module is imported in the browser so custom
+// memes are ready by the time the camera/trigger engine runs.
+if (typeof window !== 'undefined') {
+  void ensureMemesLoaded()
 }
 
 export function getAllMemes(): Meme[] {
-  hydrateMemes()
-
   const overriddenIds = new Set(customMemes.map((meme) => meme.id))
   return [
     ...memes.filter((meme) => !overriddenIds.has(meme.id) && !deletedMemeIds.has(meme.id)),
@@ -287,18 +332,28 @@ export function getAllMemes(): Meme[] {
   ]
 }
 
-export function addCustomMeme(meme: Meme): void {
-  hydrateMemes()
+export async function addCustomMeme(meme: Meme): Promise<void> {
+  await ensureMemesLoaded()
+  await storage.putCustomMeme(meme)
   customMemes = [...customMemes.filter((item) => item.id !== meme.id), meme]
   deletedMemeIds = new Set([...deletedMemeIds].filter((id) => id !== meme.id))
-  persistMemes()
+  notify()
 }
 
-export function deleteMeme(id: string): void {
-  hydrateMemes()
-  deletedMemeIds = new Set(deletedMemeIds).add(id)
-  customMemes = customMemes.filter((item) => item.id !== id)
-  persistMemes()
+export async function deleteMeme(id: string): Promise<void> {
+  await ensureMemesLoaded()
+
+  const isCustom = customMemes.some((meme) => meme.id === id)
+  if (isCustom) {
+    await storage.deleteCustomMeme(id)
+    customMemes = customMemes.filter((item) => item.id !== id)
+  } else {
+    const nextDeleted = new Set(deletedMemeIds).add(id)
+    await storage.saveDeletedIds([...nextDeleted])
+    deletedMemeIds = nextDeleted
+  }
+
+  notify()
 }
 
 export function getMemeById(id: string): Meme | undefined {
