@@ -39,6 +39,7 @@ export type MemeConditionValue =
   | 'thumbs-down'
   | 'pointing-up'
   | 'peace'
+  | 'ok'
   | 'three-fingers'
   | 'index-finger-near-mouth'
   | 'index-finger-near-head'

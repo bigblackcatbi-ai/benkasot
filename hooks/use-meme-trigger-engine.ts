@@ -28,6 +28,28 @@ const TICK_MS = 100
 const CONFIRMATION_FRAMES = 2
 const COOLDOWN_MS = 200
 
+// Grace period for an already-active meme. If it temporarily loses one of its
+// required conditions (e.g. from landmark jitter) but regains them within this
+// window, it stays active instead of flickering off.
+const ACTIVE_GRACE_MS = 500
+
+// Salute tuning. The hand must be an open/extended hand held beside the head at
+// brow/temple height. Distances are normalized against face width/height so the
+// pose works regardless of how far the user is from the camera.
+const SALUTE_CONFIG = {
+  // A fingertip this far from the wrist (x palm size) counts as extended.
+  openFingerRatio: 1.5,
+  // At least this many of the four fingers must be extended.
+  minExtendedFingers: 3,
+  // Horizontal offset of the palm from the face center, as a fraction of face
+  // width. Below = hand in front of the face; above = hand out in the frame.
+  besideMin: 0.35,
+  besideMax: 1.25,
+  // Vertical window for the palm, relative to the top of the face.
+  topPad: 0.25,
+  bottomPad: 0.35,
+}
+
 function distance(a: NormalizedLandmark, b: NormalizedLandmark) {
   return Math.hypot(
     a.x - b.x,
@@ -60,17 +82,15 @@ function conditionMatches(
 
   if (condition.feature === 'eyes') {
     if (value === 'squinting') {
-      return (
-        analysis.eyes === 'CLOSED' ||
-        analysis.eyes.startsWith('WINK')
-      )
+      // Squinting is its own narrowed-eye state, distinct from fully closed
+      // or winking. It stays true even when the mouth is neutral.
+      return analysis.eyes === 'SQUINTING'
     }
 
     if (value === 'wide') {
-      return (
-        analysis.eyes === 'OPEN' ||
-        analysis.faceExpression === 'SURPRISED'
-      )
+      // Wide eyes is its own deliberately-widened state, distinct from a normal
+      // OPEN gaze. Both eyes must participate (see combineEyeStates).
+      return analysis.eyes === 'WIDE'
     }
 
     if (value === 'closed') {
@@ -277,6 +297,52 @@ function conditionMatches(
     }
 
     // ------------------------------------------------
+    // SALUTE
+    // Open hand held upright beside the forehead/temple.
+    // This is a spatial pose, NOT simply an open palm.
+    // ------------------------------------------------
+
+    if (value === 'salute') {
+      if (!face || face.length < 468) return false
+
+      const faceWidth = Math.max(0.001, distance(face[234], face[454]))
+      const eyeY = (face[33].y + face[263].y) / 2
+      const centerX = (face[33].x + face[263].x) / 2
+
+      return hands.some((hand) => {
+        if (!hand || hand.length < 21) return false
+
+        const palmSize = Math.max(0.001, distance(hand[0], hand[9]))
+
+        // Hand must be open/extended: most fingertips far from the wrist.
+        const extended = [8, 12, 16, 20].filter(
+          (tip) => distance(hand[tip], hand[0]) > palmSize * SALUTE_CONFIG.openFingerRatio,
+        ).length
+        if (extended < SALUTE_CONFIG.minExtendedFingers) return false
+
+        // Fingers must point upward (tips above the knuckles in image space).
+        const tipY = (hand[8].y + hand[12].y + hand[16].y + hand[20].y) / 4
+        const mcpY = (hand[5].y + hand[9].y + hand[13].y + hand[17].y) / 4
+        if (tipY >= mcpY) return false
+
+        // Palm centroid, used to locate the hand relative to the head.
+        const palmX = (hand[0].x + hand[5].x + hand[9].x + hand[13].x + hand[17].x) / 5
+        const palmY = (hand[0].y + hand[5].y + hand[9].y + hand[13].y + hand[17].y) / 5
+
+        const offsetX = Math.abs(palmX - centerX)
+        const besideHead =
+          offsetX > faceWidth * SALUTE_CONFIG.besideMin &&
+          offsetX < faceWidth * SALUTE_CONFIG.besideMax
+
+        const nearBrowHeight =
+          palmY > faceTop.y - faceHeight * SALUTE_CONFIG.topPad &&
+          palmY < eyeY + faceHeight * SALUTE_CONFIG.bottomPad
+
+        return besideHead && nearBrowHeight
+      })
+    }
+
+    // ------------------------------------------------
     // NORMAL HAND GESTURES
     // ------------------------------------------------
 
@@ -286,6 +352,7 @@ function conditionMatches(
       'thumbs-up': 'THUMBS UP',
       'thumbs-down': 'THUMBS DOWN',
       pointing: 'POINTING',
+      'pointing-up': 'POINTING UP',
       peace: 'PEACE',
       'three-fingers': 'THREE FINGERS',
       'four-fingers': 'FOUR FINGERS',
@@ -590,6 +657,11 @@ export function useMemeTriggerEngine(
   const cooldownUntilRef =
     useRef(0)
 
+  // Timestamp when the active meme first became unmatched, or 0 while it is
+  // fully matched. Used to apply the ACTIVE_GRACE_MS stability window.
+  const activeLostSinceRef =
+    useRef(0)
+
   useEffect(() => {
     analysisRef.current = analysis
   }, [analysis])
@@ -603,6 +675,7 @@ export function useMemeTriggerEngine(
       candidateIdRef.current = null
       candidateFramesRef.current = 0
       cooldownUntilRef.current = 0
+      activeLostSinceRef.current = 0
 
       return
     }
@@ -681,6 +754,9 @@ export function useMemeTriggerEngine(
         // triggers are still satisfied,
         // keep it. Do not switch memes.
         if (activeMatch) {
+          // Fully matched again: clear any pending loss timer.
+          activeLostSinceRef.current = 0
+
           setDebug((previous) => {
             const next = {
               candidateId:
@@ -720,6 +796,26 @@ export function useMemeTriggerEngine(
         // ---------------------------------------
         // ACTIVE MEME LOST A REQUIRED TRIGGER
         // ---------------------------------------
+
+        // Begin (or continue) the grace window. While it is running we keep the
+        // same meme active and return early, so a different meme cannot replace
+        // it and the candidate confirmation logic below is not disturbed.
+        if (activeLostSinceRef.current === 0) {
+          activeLostSinceRef.current = currentTime
+        }
+
+        // Conditions came back within the grace period on a later tick would
+        // have hit the activeMatch branch above and cleared the timer. If we are
+        // still here and within the window, hold the active meme.
+        if (
+          currentTime - activeLostSinceRef.current <
+          ACTIVE_GRACE_MS
+        ) {
+          return
+        }
+
+        // Grace period elapsed and the meme is still unmatched: deactivate.
+        activeLostSinceRef.current = 0
 
         activeMemeIdRef.current = null
         setActiveMeme(null)

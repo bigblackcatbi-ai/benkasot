@@ -412,6 +412,7 @@ function CreateMemePage() {
     { value: 'thumbs-down', label: 'THUMBS DOWN' },
     { value: 'pointing-up', label: 'POINTING UP' },
     { value: 'three-fingers', label: 'THREE FINGERS' },
+    { value: 'ok', label: 'OK' },
     { value: 'hand-on-head', label: 'HAND ON HEAD' },
     { value: 'both-hands-near-head', label: 'BOTH HANDS ON HEAD' },
     { value: 'hand-on-chest', label: 'HAND ON CHEST' },
