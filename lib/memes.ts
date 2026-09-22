@@ -1,4 +1,5 @@
 import type { Meme } from '@/types/meme'
+import * as storage from './meme-storage'
 
 const defaultOverlay: Meme['overlay'] = {
   anchor: 'face',
@@ -95,9 +96,8 @@ export const memes: readonly Meme[] = [
     trigger: {
       type: 'combined',
       conditions: [
-        { feature: 'expression', category: 'face', value: 'excited', required: true },
+        { feature: 'expression', category: 'face', value: 'happy', required: true },
         { feature: 'hands', category: 'hand', value: 'fist', required: true },
-        { feature: 'movement', category: 'movement', value: 'celebratory', required: false, enabled: false },
       ],
     },
     overlay: defaultOverlay,
@@ -141,7 +141,7 @@ export const memes: readonly Meme[] = [
       type: 'combined',
       conditions: [
         { feature: 'hands', category: 'hand', value: 'both-hands-near-head', required: true },
-        { feature: 'expression', category: 'face', value: 'crying', required: true },
+        { feature: 'expression', category: 'face', value: 'sad', required: true },
         { feature: 'mouth', category: 'face', value: 'open', required: true },
       ],
     },
@@ -229,7 +229,7 @@ export const memes: readonly Meme[] = [
     trigger: {
       type: 'combined',
       conditions: [
-        { feature: 'hands', category: 'hand', value: 'both-hands-near-left-chest', required: true },
+        { feature: 'hands', category: 'hand', value: 'hand-on-chest', required: true },
         { feature: 'mouth', category: 'face', value: 'open', required: true },
         { feature: 'gaze', category: 'face', value: 'right', required: true },
       ],
@@ -239,21 +239,121 @@ export const memes: readonly Meme[] = [
 ]
 
 
+const LEGACY_STORAGE_KEY = 'meme-vision:memes:v1'
+
+// In-memory mirror of IndexedDB. getAllMemes() must stay synchronous because the
+// trigger engine reads it every animation frame; async hydration fills this cache
+// and then notifies subscribers so React views re-render.
 let customMemes: Meme[] = []
 let deletedMemeIds = new Set<string>()
+let hydrationPromise: Promise<void> | null = null
+const listeners = new Set<() => void>()
+
+function notify(): void {
+  listeners.forEach((listener) => listener())
+}
+
+export function subscribeMemes(listener: () => void): () => void {
+  listeners.add(listener)
+  return () => {
+    listeners.delete(listener)
+  }
+}
+
+// One-time migration of any memes saved by the old localStorage implementation.
+// Best-effort: obsolete data must never block or crash the app.
+async function migrateLegacyStorage(): Promise<void> {
+  if (typeof window === 'undefined') return
+
+  let raw: string | null = null
+  try {
+    raw = window.localStorage.getItem(LEGACY_STORAGE_KEY)
+  } catch {
+    return
+  }
+  if (!raw) return
+
+  try {
+    const stored = JSON.parse(raw) as { customMemes?: Meme[]; deletedMemeIds?: string[] }
+    const legacyCustom = Array.isArray(stored.customMemes) ? stored.customMemes : []
+    const legacyDeleted = Array.isArray(stored.deletedMemeIds) ? stored.deletedMemeIds : []
+
+    for (const meme of legacyCustom) {
+      if (meme && typeof meme.id === 'string') {
+        await storage.putCustomMeme(meme)
+      }
+    }
+
+    if (legacyDeleted.length) {
+      const existing = await storage.loadDeletedIds()
+      await storage.saveDeletedIds(Array.from(new Set([...existing, ...legacyDeleted])))
+    }
+
+    window.localStorage.removeItem(LEGACY_STORAGE_KEY)
+  } catch {
+    // Leave the legacy key in place so a future load can retry the migration.
+  }
+}
+
+export function ensureMemesLoaded(): Promise<void> {
+  if (typeof window === 'undefined') return Promise.resolve()
+
+  if (!hydrationPromise) {
+    hydrationPromise = (async () => {
+      await migrateLegacyStorage()
+      const [loadedCustom, loadedDeleted] = await Promise.all([
+        storage.loadAllCustomMemes(),
+        storage.loadDeletedIds(),
+      ])
+      customMemes = loadedCustom
+      deletedMemeIds = new Set(loadedDeleted)
+      notify()
+    })().catch((error) => {
+      // Built-in memes keep working even if local storage is unavailable.
+      hydrationPromise = null
+      console.warn('[BENKASOT] Custom meme storage unavailable:', error)
+    })
+  }
+
+  return hydrationPromise
+}
+
+// Start loading as soon as this module is imported in the browser so custom
+// memes are ready by the time the camera/trigger engine runs.
+if (typeof window !== 'undefined') {
+  void ensureMemesLoaded()
+}
 
 export function getAllMemes(): Meme[] {
   const overriddenIds = new Set(customMemes.map((meme) => meme.id))
-  return [...memes.filter((meme) => !overriddenIds.has(meme.id) && !deletedMemeIds.has(meme.id)), ...customMemes.filter((meme) => !deletedMemeIds.has(meme.id))]
+  return [
+    ...memes.filter((meme) => !overriddenIds.has(meme.id) && !deletedMemeIds.has(meme.id)),
+    ...customMemes.filter((meme) => !deletedMemeIds.has(meme.id)),
+  ]
 }
 
-export function addCustomMeme(meme: Meme): void {
+export async function addCustomMeme(meme: Meme): Promise<void> {
+  await ensureMemesLoaded()
+  await storage.putCustomMeme(meme)
   customMemes = [...customMemes.filter((item) => item.id !== meme.id), meme]
+  deletedMemeIds = new Set([...deletedMemeIds].filter((id) => id !== meme.id))
+  notify()
 }
 
-export function deleteMeme(id: string): void {
-  deletedMemeIds = new Set(deletedMemeIds).add(id)
-  customMemes = customMemes.filter((item) => item.id !== id)
+export async function deleteMeme(id: string): Promise<void> {
+  await ensureMemesLoaded()
+
+  const isCustom = customMemes.some((meme) => meme.id === id)
+  if (isCustom) {
+    await storage.deleteCustomMeme(id)
+    customMemes = customMemes.filter((item) => item.id !== id)
+  } else {
+    const nextDeleted = new Set(deletedMemeIds).add(id)
+    await storage.saveDeletedIds([...nextDeleted])
+    deletedMemeIds = nextDeleted
+  }
+
+  notify()
 }
 
 export function getMemeById(id: string): Meme | undefined {

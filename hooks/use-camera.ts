@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import type { CameraDevice, CameraFacingMode, CameraStatus } from '@/types/camera'
 
 const CAMERA_MESSAGES = {
-  denied: 'Camera permission is required to use MEME//VISION.',
+  denied: 'Camera permission is required to use BENKASOT.',
   unavailable: 'No camera was detected on this device.',
   unreadable: 'The camera is currently unavailable. Another application may be using it.',
   security: 'Camera access was blocked by the browser or security policy.',
